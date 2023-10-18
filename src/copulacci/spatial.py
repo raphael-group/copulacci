@@ -59,6 +59,14 @@ def construct_boundary(
     if ("spatial_network" not in adata.uns):
         adata = construct_spatial_network(adata)
     G = adata.uns["spatial_network"]
+    # update node names
+    node_dict = {}
+    print('relabeling nodes')
+    G_with_names = G.copy()
+    for node in G.nodes():
+        node_dict[node] = adata.obs_names[node]
+    G_with_names = nx.relabel_nodes(G_with_names, node_dict)
+    adata.uns["spatial_network_names"] = G_with_names
     boundary_cell_type = []
     
     for u,v in G.edges():

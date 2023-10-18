@@ -43,6 +43,96 @@ def get_dt_cdf(x, lam, DT=True):
     return stats.norm.ppf(r)
 
 
+def sample_from_copula(
+    n_array,
+    mu_x, 
+    mu_y, 
+    coeff
+):    
+    cov = linalg.toeplitz([1,coeff])
+    lam_x = n_array * np.exp(mu_x)
+    lam_y = n_array * np.exp(mu_y)
+    samples = np.random.multivariate_normal(
+        [0,0], 
+        cov, 
+        size = len(n_array)
+    )
+    samples = pd.DataFrame(samples, columns=['x', 'y'])
+    cdf_x = stats.norm.cdf(samples.x)
+    cdf_y = stats.norm.cdf(samples.y)
+    samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
+    samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
+   
+    return samples
+
+
+def sample_from_copula_dist(
+    n_array,
+    mu_x, 
+    mu_y, 
+    coeff_list
+):    
+    lam_x = n_array * np.exp(mu_x)
+    lam_y = n_array * np.exp(mu_y)
+
+    # samples = Parallel(n_jobs=n_jobs, verbose=0)(
+    #                 delayed(np.random.multivariate_normal)(
+    #                     [0,0],
+    #                     [[1, coeff], [coeff, 1]],
+    #                     size = 1) for coeff in coeff_list)
+    # samples = np.array(list(chain(*(samples))))
+    
+    samples = np.array([np.random.multivariate_normal(
+            [0,0], 
+            [[1,coeff],[coeff,1]], 
+            size = 1
+        ).squeeze() for coeff in coeff_list])
+        
+    samples = pd.DataFrame(samples, columns=['x', 'y'])
+    cdf_x = stats.norm.cdf(samples.x)
+    cdf_y = stats.norm.cdf(samples.y)
+    samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
+    samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
+    
+    return samples
+
+
+def sample_from_copula_grad(
+    n_array,
+    mu_x, 
+    mu_y,
+    coeff_list,
+    dist,
+    l = None,
+    t = 0
+):    
+    if l is None:
+        l = max(dist)
+    lam_x = (n_array * np.exp(mu_x)) * np.exp(-(t * (dist/l**2)))
+    lam_y = (n_array * np.exp(mu_y)) * np.exp(-(t * (dist/l**2)))
+
+    # samples = Parallel(n_jobs=n_jobs, verbose=0)(
+    #                 delayed(np.random.multivariate_normal)(
+    #                     [0,0],
+    #                     [[1, coeff], [coeff, 1]],
+    #                     size = 1) for coeff in coeff_list)
+    # samples = np.array(list(chain(*(samples))))
+    
+    samples = np.array([np.random.multivariate_normal(
+            [0,0], 
+            [[1,coeff],[coeff,1]], 
+            size = 1
+        ).squeeze() for coeff in coeff_list])
+        
+    samples = pd.DataFrame(samples, columns=['x', 'y'])
+    cdf_x = stats.norm.cdf(samples.x)
+    cdf_y = stats.norm.cdf(samples.y)
+    samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
+    samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
+    
+    return samples
+
+
 def scdesign_copula(x, y, DT=False):
     lam1 = x.mean()
     lam2 = y.mean()
@@ -139,7 +229,7 @@ def call_pois_multi_param_opt(x,y,DT=False):
     return res.x
 
 
-def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula'):
+def log_joint_lik_perm_old(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula'):
     # get lam parameters for mu_1
     coeff = params[0]
     mu_1 = params[1]
@@ -192,15 +282,11 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
     return -logsum
 
 
-def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist, perm=100, DT=True, model = 'copula'):
+def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula'):
     # get lam parameters for mu_1
-    assert(len(params) == 4)
-
-    coeff0 = params[0]
-    coeff = params[1]
-    mu_1 = params[2]
-    mu_2 = params[3]
-
+    coeff = params[0]
+    mu_1 = params[1]
+    mu_2 = params[2]
     
     lam1 = umi_sum_1 * np.exp(mu_1)
     lam2 = umi_sum_2 * np.exp(mu_2)
@@ -216,41 +302,279 @@ def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist, perm=100, 
     else:
         z = np.column_stack([r_x, r_y])
     
-    # get gaussuan part using z
-    if model == 'gaussian':
-        cov =linalg.toeplitz(np.array([1.0, coeff], dtype = 'float'))
-        # Calculate the inverse of the covariance matrix
-        inv_cov_matrix = np.linalg.inv(cov)
-        det_cov_matrix = np.linalg.det(cov)
-        n = z.shape[0]
-        log_likelihood = -0.5 * (n * np.log(2 * np.pi) + n * np.log(det_cov_matrix))
-        mahalanobis_distances = np.sum(z.dot(inv_cov_matrix) * z, axis=1)
-        log_likelihood -= 0.5 * np.sum(mahalanobis_distances)
-        return -log_likelihood
-
-    # make \rho_0 * dist**\rho
-    def make_blockdiag_cov(dist, coeff0, coeff):
-        dist_vec = coeff0 * np.exp(-dist*coeff)
-        dist_mat = np.eye(len(dist_vec)) * dist_vec
-        cov = np.kron( dist_mat, np.ones((2,2)) )
-        np.fill_diagonal(cov, 1)
-        return cov
-
-    cov = make_blockdiag_cov(dist, coeff0, coeff)
-    det = np.linalg.det(cov)
-    inv_cov = np.linalg.inv(cov)
-    z_unroll = linalg.block_diag(*(i for i in z))
-    exp_term = np.sum(-0.5 * np.sum(z_unroll @ (inv_cov - np.identity( inv_cov.shape[0] )) * z_unroll, axis=1))
-    norm_term = -0.5 * (len(x) * np.log(2 * np.pi) + len(x) * np.log(det+EPSILON))
+    # term1
+    det = 1 - coeff**2
+    term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+    term2 = (
+        np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+        np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+    )
     
-    logsum = norm_term + exp_term
-    
-    # get the pdf for marginals
-    logsum += np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ))
-    logsum += np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+    term3 = -0.5 * len(x) * np.log(det+EPSILON)
+    logsum = term1 + term2 + term3
+   
     return -logsum
 
 
+def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, perm=100, DT=True, model = 'copula'):
+    # get lam parameters for mu_1
+    rho_zero = params[0]
+    rho_one = params[1]
+    coeff_list = rho_zero * np.exp(-1 * dist_list * rho_one)
+    mu_1 = params[2]
+    mu_2 = params[3]
+    
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+    
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+    if DT:
+        for _ in range(perm-1):    
+            r_x += get_dt_cdf(x, lam1)
+            r_y += get_dt_cdf(y, lam2)
+        z = np.column_stack([r_x/perm, r_y/perm])
+    else:
+        z = np.column_stack([r_x, r_y])
+    
+    # term1
+    det = 1 - coeff_list**2
+    term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
+    
+    term2 = (
+        np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+        np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+    )
+    
+    term3 = np.sum(-0.5 * np.log(det+EPSILON))
+    logsum = term1 + term2 + term3
+   
+    return -logsum
+
+def log_joint_lik_perm_grad_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list,  grad_list, perm=100, DT=True, model = 'copula'):
+    # get lam parameters for mu_1
+    rho_zero = params[0]
+    rho_one = params[1]
+    coeff_list = rho_zero * np.exp(-1 * dist_list * rho_one)
+    mu_1 = params[2]
+    mu_2 = params[3]
+    t = params[4]
+    l = max(grad_list)
+
+    lam1 = (umi_sum_1 * np.exp(mu_1)) * np.exp(-(t * (grad_list / l**2)))
+    lam2 = (umi_sum_2 * np.exp(mu_2)) * np.exp(-(t * (grad_list / l**2)))
+    #lam1 = umi_sum_1 * np.exp(mu_1)
+    #lam2 = umi_sum_2 * np.exp(mu_2)
+    
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+    if DT:
+        for _ in range(perm-1):    
+            r_x += get_dt_cdf(x, lam1)
+            r_y += get_dt_cdf(y, lam2)
+        z = np.column_stack([r_x/perm, r_y/perm])
+    else:
+        z = np.column_stack([r_x, r_y])
+    
+    # term1
+    det = 1 - coeff_list**2
+    term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
+    
+    term2 = (
+        np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+        np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+    )
+    
+    term3 = np.sum(-0.5 * np.log(det+EPSILON))
+    logsum = term1 + term2 + term3
+   
+    return -logsum
+
+
+def call_optimizer_dense(
+    _x, 
+    _y, 
+    _umi_sum_1, 
+    _umi_sum_2, 
+    method = 'Nelder-Mead',
+    perm=10,DT = True,
+    cutoff=0.6, 
+    length_cutoff=20,
+    model='copula',
+    num_restarts = 50,
+    force = False
+):
+    x = _x.copy()
+    y = _y.copy()
+    if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
+        return ([ 0, 0, 0 , 'skip' ])
+    if ( (x.sum() == 0) or (y.sum() == 0) ):
+        return ([ 0, 0, 0 , 'skip' ])
+    if len(x) < length_cutoff:
+        return ([ 0, 0, 0 , 'skip' ])
+    umi_sum_1 = _umi_sum_1.copy()
+    umi_sum_2 = _umi_sum_2.copy()
+    method_type = model
+
+    if not force:
+        # If either of the arrays are too sparse we would run  
+        # gaussian extimate rather than anything else
+        inds_zero = np.where((x == 0) & (y == 0))[0]
+        if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
+            method_type = 'skip'
+        
+    
+    results = []
+    mu_x_start = np.log(x.sum() / umi_sum_1.sum())
+    mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+    if method_type == 'skip':
+        return ([ 0, 0, 0 , 'skip' ])
+    else:
+        for _ in range(num_restarts):
+            res = minimize(
+                log_joint_lik_perm, 
+                x0=[0.0,mu_x_start,mu_y_start], 
+                method = method, 
+                bounds = [(-0.99, 0.99),
+                          (mu_x_start-5, 0),
+                          (mu_y_start-5, 0)], 
+                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"), 
+                tol=1e-6
+            )
+            results += [res.copy()]
+        best_result = min(results, key=lambda x: x['fun'])
+        return list(best_result['x']) + ['copula']
+
+
+def call_optimizer_dense_dist(
+    _x, 
+    _y, 
+    _umi_sum_1, 
+    _umi_sum_2,
+    dist_list,
+    rho_one_start = 0.01,
+    method = 'Nelder-Mead',
+    perm=10,
+    DT = True,
+    cutoff=0.6,
+    length_cutoff=20,
+    model='copula',
+    num_restarts = 50,
+    force = False
+):
+    x = _x.copy()
+    y = _y.copy()
+    if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    if ( (x.sum() == 0) or (y.sum() == 0) ):
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    if len(x) < length_cutoff:
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    umi_sum_1 = _umi_sum_1.copy()
+    umi_sum_2 = _umi_sum_2.copy()
+    method_type = model
+
+    if not force:
+        # If either of the arrays are too sparse we would run  
+        # gaussian extimate rather than anything else
+        
+        if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
+            
+            method_type = 'skip'
+        
+    
+    results = []
+    mu_x_start = np.log(x.sum() / umi_sum_1.sum())
+    mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+    if method_type == 'skip':
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    else:
+        for _ in range(num_restarts):
+            res = minimize(
+                log_joint_lik_perm_dist, 
+                x0=[0.0,rho_one_start,mu_x_start,mu_y_start], 
+                method = method, 
+                bounds = [(-0.99, 0.99),
+                          (0.0, 0.1),
+                          (mu_x_start-5, 0),
+                          (mu_y_start-5, 0)], 
+                args=(umi_sum_1,umi_sum_2,x,y, dist_list,perm,DT,"copula"), 
+                tol=1e-6
+            )
+            results += [res.copy()]
+        best_result = min(results, key=lambda x: x['fun'])
+        return list(best_result['x']) + ['copula']
+
+
+def call_optimizer_dense_grad(
+    _x, 
+    _y, 
+    _umi_sum_1, 
+    _umi_sum_2,
+    dist_list,
+    grad_list,
+    rho_one_start = 0.01,
+    method = 'Nelder-Mead',
+    perm=10,
+    DT = True,
+    cutoff=0.6,
+    length_cutoff=20,
+    model='copula',
+    num_restarts = 50,
+    force = False
+):
+    x = _x.copy()
+    y = _y.copy()
+    if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    if ( (x.sum() == 0) or (y.sum() == 0) ):
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    if len(x) < length_cutoff:
+        
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    umi_sum_1 = _umi_sum_1.copy()
+    umi_sum_2 = _umi_sum_2.copy()
+    method_type = model
+
+    if not force:
+        # If either of the arrays are too sparse we would run  
+        # gaussian extimate rather than anything else
+        
+        if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
+            
+            method_type = 'skip'
+        
+    
+    results = []
+    mu_x_start = np.log(x.sum() / umi_sum_1.sum())
+    mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+    if method_type == 'skip':
+        return ([ 0, 0, 0, 0 , 'skip' ])
+    else:
+        for _ in range(num_restarts):
+            res = minimize(
+                log_joint_lik_perm_grad_dist, 
+                x0=[0.0,rho_one_start,mu_x_start,mu_y_start,1], 
+                method = method, 
+                bounds = [(-0.99, 0.99),
+                          (0.0, 0.1),
+                          (mu_x_start-5, 0),
+                          (mu_y_start-5, 0),
+                          (0,50)
+                         ], 
+                args=(umi_sum_1,umi_sum_2,x,y, dist_list,grad_list,perm,DT,"copula"), 
+                tol=1e-6
+            )
+            results += [res.copy()]
+        best_result = min(results, key=lambda x: x['fun'])
+        return list(best_result['x']) + ['copula']
 
 
 # Call copula
@@ -301,61 +625,6 @@ def call_optimizer_full(_x, _y,
                 results += [res.copy()]
             best_result = min(results, key=lambda x: x['fun'])
             return list(best_result['x']) + ['gaussian']
-    else:
-        for _ in range(num_restarts):
-            res = minimize(
-                log_joint_lik_perm, 
-                x0=[0.0,mu_x_start,mu_y_start], 
-                method = method, 
-                bounds = [(-0.99, 0.99),
-                          (mu_x_start-5, 0),
-                          (mu_y_start-5, 0)], 
-                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"), 
-                tol=1e-6
-            )
-            results += [res.copy()]
-        best_result = min(results, key=lambda x: x['fun'])
-        return list(best_result['x']) + ['copula']
-
-
-
-
-# Run optimizer only for dense data
-# ignore the sparse data 
-def call_optimizer_dense(_x, _y, 
-                             _umi_sum_1, 
-                             _umi_sum_2, 
-                             method = 'Nelder-Mead',
-                             perm=10,DT = True,
-                             cutoff=0.6, 
-                             length_cutoff=20,
-                             model='copula',
-                       num_restarts = 50,force=False,quick=False):
-    x = _x.copy()
-    y = _y.copy()
-    if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
-        return ([ 0, 0, 0 , 'skip' ])
-    if ( (x.sum() == 0) or (y.sum() == 0) ):
-        return ([ 0, 0, 0 , 'skip' ])
-    if len(x) < length_cutoff:
-        return ([ 0, 0, 0 , 'skip' ])
-    umi_sum_1 = _umi_sum_1.copy()
-    umi_sum_2 = _umi_sum_2.copy()
-    method_type = model
-
-    if not force:
-        # If either of the arrays are too sparse we would run  
-        # gaussian extimate rather than anything else
-        inds_zero = np.where((x == 0) & (y == 0))[0]
-        if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
-            method_type = 'skip'
-        
-    
-    results = []
-    mu_x_start = np.log(x.sum() / umi_sum_1.sum())
-    mu_y_start = np.log(y.sum() / umi_sum_2.sum())
-    if method_type == 'skip':
-        return ([ 0, 0, 0 , 'skip' ])
     else:
         for _ in range(num_restarts):
             res = minimize(
