@@ -17,12 +17,15 @@ import networkx as nx
 import statsmodels.api as sm
 import random
 import spatial
+import warnings
 
 import os
 os.environ['USE_PYGEOS'] = '0'
 import geopandas as gpd
 gpd.options.use_pygeos = True
 
+warnings.filterwarnings("ignore", category=FutureWarning)
+warnings.filterwarnings("ignore", category=UserWarning)
 
 def get_dt_cdf(x, lam, DT=True):
     u_x = stats.poisson.cdf(x, lam).clip(EPSILON, 1 - EPSILON)
@@ -686,6 +689,7 @@ def run_poiss_copula(
 def run_copula(
     data_list_dict: dict,
     umi_sums: dict,
+    dist_list_dict: dict = None,
     lig_rec_pair_list = None,
     n_jobs = 20,
     verbose = 1,
@@ -702,8 +706,8 @@ def run_copula(
     heteronomic = False,
     df_lig_rec = None,
     groups = None
-) -> pd.DataFrame:
-    cop_df = pd.DataFrame()
+) -> dict:
+    cop_df_dict = {}
     if groups == None:
         groups = data_list_dict.keys()
     if type_run == 'full':
@@ -724,41 +728,276 @@ def run_copula(
                         model=model,
                         num_restarts = num_restarts,
                         quick=quick) for (x,y) in data_list)
-            tmp = pd.DataFrame(res,columns=[g1,g11+'_mu_x',g12+'_mu_y',g1+'_copula_method'])
-            cop_df = pd.concat([cop_df, tmp.copy()], axis = 1)
+            tmp = pd.DataFrame(res,columns=[
+                'copula_coeff',
+                'mu_x',
+                'mu_y',
+                'copula_method'
+                ])
+            cop_df_dict[g1] = tmp.copy()
+            
     else:
-        for g1 in groups:
-            data_list = data_list_dict[g1]
-            print(g1)
-            g11, g12 = g1.split('=')
-            res = Parallel(n_jobs=n_jobs, verbose=verbose)(
-                    delayed(call_optimizer_dense)(
-                        x,
-                        y,
-                        umi_sums[g1][g11],
-                        umi_sums[g1][g12],
-                        method=method,
-                        perm=perm,
-                        DT=DT,
-                        cutoff=cutoff,
-                        length_cutoff=length_cutoff,
-                        model=model,
-                        num_restarts = num_restarts,
-                        quick=quick) for (x,y) in data_list)
-            tmp = pd.DataFrame(res,columns=[g1,g11+'_mu_x',g12+'_mu_y',g1+'_copula_method'])
-            cop_df = pd.concat([cop_df, tmp.copy()], axis = 1)
+        if dist_list_dict is None:
+            for g1 in groups:
+                data_list = data_list_dict[g1]
+                print(g1)
+                g11, g12 = g1.split('=')
+                res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                        delayed(call_optimizer_dense)(
+                            x,
+                            y,
+                            umi_sums[g1][g11],
+                            umi_sums[g1][g12],
+                            method=method,
+                            perm=perm,
+                            DT=DT,
+                            cutoff=cutoff,
+                            length_cutoff=length_cutoff,
+                            model=model,
+                            num_restarts = num_restarts,
+                            quick=quick) for (x,y) in data_list)
+                #tmp = pd.DataFrame(res,columns=[g1,g11+'_mu_x',g12+'_mu_y',g1+'_copula_method'])
+                tmp = pd.DataFrame(res,columns=[
+                    'copula_coeff',
+                    'mu_x',
+                    'mu_y',
+                    'copula_method'
+                ])
+                cop_df_dict[g1] = tmp.copy()
+                if heteronomic:
+                    if df_lig_rec is None:
+                        raise ValueError('df_lig_rec is None')
+                    cop_df_dict[g1].index = df_lig_rec.index
+                else:
+                    if lig_rec_pair_list is None:
+                        raise ValueError('lig_rec_pair_list is None')
+                    cop_df_dict[g1].index = [l+'_'+r for l,r in lig_rec_pair_list]
+                    cop_df_dict[g1].loc[:,'ligand'] = cop_df_dict[g1].index.str.split('_').str[0]
+                    cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]
+                # cop_df = pd.concat([cop_df, tmp.copy()], axis = 1)
+        else:
+            for g1 in groups:
+                data_list = data_list_dict[g1]
+                print(g1)
+                g11, g12 = g1.split('=')
+                res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                        delayed(call_optimizer_dense_dist)(
+                            x,
+                            y,
+                            umi_sums[g1][g11],
+                            umi_sums[g1][g12],
+                            dist_list_dict[g1],
+                            method=method,
+                            perm=perm,
+                            DT=DT,
+                            cutoff=cutoff,
+                            length_cutoff=length_cutoff,
+                            model=model,
+                            num_restarts = num_restarts
+                            ) for (x,y) in data_list)
+                # tmp = pd.DataFrame(res,columns=[g1+'_zero', g1+'_one', g11+'_mu_x', 
+                #                                 g12+'_mu_y', g1+'_copula_method'])
+                tmp = pd.DataFrame(res,columns=[
+                    'rho_zero',
+                    'rho_one',
+                    'mu_x',
+                    'mu_y',
+                    'copula_method'
+                ])
+                cop_df_dict[g1] = tmp.copy()
+                # cop_df = pd.concat([cop_df, tmp.copy()], axis = 1)
     
-    if heteronomic:
-        if df_lig_rec is None:
-            raise ValueError('df_lig_rec is None')
-        cop_df.index = df_lig_rec.index
+                if heteronomic:
+                    if df_lig_rec is None:
+                        raise ValueError('df_lig_rec is None')
+                    cop_df_dict[g1].index = df_lig_rec.index
+                else:
+                    if lig_rec_pair_list is None:
+                        raise ValueError('lig_rec_pair_list is None')
+                    cop_df_dict[g1].index = [l+'_'+r for l,r in lig_rec_pair_list]
+                    cop_df_dict[g1].loc[:,'ligand'] = cop_df_dict[g1].index.str.split('_').str[0]
+                    cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]        
+    return cop_df_dict
+
+
+def merge_data_groups(
+    groups,
+    data_list_dict: dict,
+    umi_sums: dict,
+    dist_list_dict: dict = None,
+    merged_group_name = None,
+):
+    if merged_group_name is None:
+        merged_group_name = 'group_merged'
+    
+    data_list_merged = []
+    
+    umi_sum_source = []
+    umi_sum_target = []
+    dist_list_merged = []
+    
+    # num of ligands
+    num_of_ligands = len(data_list_dict[groups[0]])
+    for i in range(num_of_ligands):
+        edge_source = [  data_list_dict[g][i][0] for g in groups ]
+        edge_target = [  data_list_dict[g][i][1] for g in groups ]
+        data_list_merged += [
+            (
+                np.concatenate(edge_source),
+                np.concatenate(edge_target)
+            )
+        ]
+            
+    for g in groups:
+        g1, g2 = g.split('=')
+        umi_sum_source += [ umi_sums[g][g1] ]
+        umi_sum_target += [ umi_sums[g][g2] ]
+        dist_list_merged  += [ dist_list_dict[g] ]
+        
+    
+    
+    umi_sums_merged = {
+        'ligand' : np.concatenate(umi_sum_source),
+        'receptor' : np.concatenate(umi_sum_target)
+    }
+    dist_list_merged = np.concatenate( dist_list_merged  )
+    return (data_list_merged, umi_sums_merged, dist_list_merged) 
+
+
+def run_diff_copula(
+    data_list_dict: dict,
+    umi_sums: dict,
+    group_1,
+    group_2,
+    dist_list_dict: dict = None,
+    lig_rec_pair_list = None,
+    n_jobs = 20,
+    verbose = 1,
+    method = 'Nelder-Mead',
+    perm = 10,
+    DT=True,
+    cutoff=0.6,
+    length_cutoff=20,
+    model='copula',
+    num_restarts = 1,
+    force=False,
+    quick=False,
+    type_run = 'full',
+    heteronomic = False,
+    df_lig_rec = None
+) -> pd.DataFrame:
+    if len(group_1) > 1:
+        raise ValueError('groups_1 has more than one group: not implemented yet')
+    if len(group_2) > 1:
+        raise ValueError('groups_2 has more than one group: not implemented yet')
+    # null model
+    # Fow all the ligands and receptors the null model 
+    # assumes that the interaction coefficient is same
+    # We merge the groups and run the copula
+    data_list_merged, umi_sums_merged, dist_list_merged = merge_data_groups(
+        [group_1, group_2],
+        data_list_dict,
+        umi_sums,
+        dist_list_dict = dist_list_dict,
+    )
+    if dist_list_dict is None:
+        res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                delayed(call_optimizer_dense)(
+                    x,
+                    y,
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
+                    method=method,
+                    perm=perm,
+                    DT=DT,
+                    cutoff=cutoff,
+                    length_cutoff=length_cutoff,
+                    model=model,
+                    num_restarts = num_restarts,
+            quick=quick) for (x,y) in data_list_merged)
+        # Get likelihoods for these values
+        tmp = pd.DataFrame(res,columns=['merged_null','null_mu_x','null_mu_y','null_copula_method'])
+        likvalues = []
+        for i, rho, mu_x, mu_y, meth in enumerate(res):
+            if meth == 'copula':
+                likvalues += [log_joint_lik_perm(
+                    [rho, mu_x, mu_y], 
+                    umi_sums_merged['ligand'], 
+                    umi_sums_merged['receptor'], 
+                    data_list_merged[i][0],
+                    data_list_merged[i][1],
+                    perm=perm, 
+                    DT=DT, 
+                    model='copula') 
+                ]
+            else:
+                likvalues += [0]
+        tmp['merged_null_lik'] = likvalues
     else:
-        if lig_rec_pair_list is None:
-            raise ValueError('lig_rec_pair_list is None')
-        cop_df.index = [l+'_'+r for l,r in lig_rec_pair_list]
-        cop_df.loc[:,'ligand'] = cop_df.index.str.split('_').str[0]
-        cop_df.loc[:,'receptor'] = cop_df.index.str.split('_').str[1]        
-    return cop_df
+        res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+            delayed(call_optimizer_dense_dist)(
+                x,
+                y,
+                umi_sums_merged['ligand'],
+                umi_sums_merged['receptor'],
+                dist_list_merged,
+                method=method,
+                perm=perm,
+                DT=DT,
+                cutoff=cutoff,
+                length_cutoff=length_cutoff,
+                model=model,
+                num_restarts = num_restarts
+                ) for (x,y) in data_list_merged
+        )
+        # Get likelihoods for these values
+        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x', 
+                                        'null_mu_y', 'null_copula_method'])
+        likvalues = []
+        for rho_zero, rho_one, mu_x, mu_y, meth in res:
+            if meth == 'copula':
+                likvalues += [log_joint_lik_perm_dist(
+                    [rho_zero, rho_one, mu_x, mu_y], 
+                    umi_sums_merged['ligand'], 
+                    umi_sums_merged['receptor'], 
+                    data_list_merged[i][0], 
+                    data_list_merged[i][1], 
+                    dist_list_merged,
+                    perm=perm, 
+                    DT=DT, 
+                    model='copula') 
+                ]
+            else:
+                likvalues += [0]
+        tmp['merged_null_lik'] = likvalues
+    null_df = tmp.copy()
+    # alternative model
+    # Run for group1
+    cop_alt_df = run_copula(
+        data_list_dict,
+        umi_sums,
+        dist_list_dict,
+        DT=False,
+        cutoff = 0.8,
+        type_run='dense',
+        num_restarts=1,
+        df_lig_rec=df_lig_rec,
+        heteronomic=True,
+        groups = [group_1, group_2]
+    )
+    # Calculate likelihoods
+    if dist_list_dict is None:
+        for g in groups:
+            g1, g2 = g.split('=')
+            cop_alt_df_slice = cop_alt_df[[g + '_zero', g + '_one', 
+                                           g1 + '_mu_x', g2 + '_mu_y',
+                                            g + '_copula_method']].copy()
+            pass
+        pass
+    # TODO complete later
+
+
+
 
 
 def call_spearman(x, y, _umi_sum_x, _umi_sum_y):
@@ -787,6 +1026,35 @@ def linearize_copula_result(
             cols_cop = [gpair, 'ligand', 'receptor', gpair+'_copula_method']
             df_chosen = cop_df[cols_cop].copy()
             df_chosen = df_chosen.rename(columns={gpair:'copula_coeff', gpair+'_copula_method':'copula_method'})
+            cop_df_dict[gpair] = df_chosen.copy()
+    return cop_df_dict
+
+def linearize_copula_result_dist(
+    cop_df: pd.DataFrame,
+    groups: list,
+    heteronomic = False
+):
+    cop_df_dict = {}
+    if heteronomic:
+        for gpair in groups:
+            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']    
+            df_chosen = cop_df[cols_cop].copy()
+            df_chosen = df_chosen.rename(columns={
+                gpair+'_zero':'rho_zero', 
+                gpair+'_one':'rho_one', 
+                gpair+'_copula_method':'copula_method'}
+            )
+            cop_df_dict[gpair] = df_chosen.copy()
+    else:
+        cop_df = cop_df.reset_index().drop('index', axis = 1)
+        for gpair in groups:
+            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']    
+            df_chosen = cop_df[cols_cop].copy()
+            df_chosen = df_chosen.rename(columns={
+                gpair+'_zero':'rho_zero', 
+                gpair+'_one':'rho_one', 
+                gpair+'_copula_method':'copula_method'}
+            )
             cop_df_dict[gpair] = df_chosen.copy()
     return cop_df_dict
 
@@ -1175,20 +1443,39 @@ def run_scc(
     for gpair in groups:
         print(gpair)
         g11, g12 = gpair.split('=')
-        lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+
+        lr_pairs_g1 = list(
+            int_edges_new_with_selfloops.loc[
                 int_edges_new_with_selfloops.interaction == gpair,
-                ["cell1", "cell2"]
-            ]
+                ["cell1", "cell2","distance"]
+            ].to_records(index=False)
+        )
+        
 
         if g11 == g12:
             G = nx.Graph()
-            G.add_edges_from(lr_pairs_g1.values)
-            self_loops = [(node, node) for node in G.nodes]
-            G.add_edges_from(self_loops)
+            G.add_weighted_edges_from(lr_pairs_g1)
+            self_loops = [(node, node, 1) for node in G.nodes]
+            G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
-            G.add_edges_from(lr_pairs_g1.values) 
+            G.add_weighted_edges_from(lr_pairs_g1) 
         print(G)
+
+        # lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+        #         int_edges_new_with_selfloops.interaction == gpair,
+        #         ["cell1", "cell2"]
+        #     ]
+
+        # if g11 == g12:
+        #     G = nx.Graph()
+        #     G.add_edges_from(lr_pairs_g1.values)
+        #     self_loops = [(node, node) for node in G.nodes]
+        #     G.add_edges_from(self_loops)
+        # else:
+        #     G = nx.DiGraph()
+        #     G.add_edges_from(lr_pairs_g1.values) 
+        # print(G)
 
         weight = nx.adjacency_matrix(G).todense()
         data_list = []
@@ -1253,6 +1540,7 @@ def run_sdm(
     int_edges_new_with_selfloops: pd.DataFrame,
     groups: list=None,
     nproc: int = 10,
+    species = 'human',
     heteronomic = False
 ) -> dict:
     
@@ -1268,20 +1556,39 @@ def run_sdm(
         st = time.time()
         print(gpair)
         g11, g12 = gpair.split('=')
-        lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+        lr_pairs_g1 = list(
+            int_edges_new_with_selfloops.loc[
                 int_edges_new_with_selfloops.interaction == gpair,
-                ["cell1", "cell2"]
-            ]
+                ["cell1", "cell2","distance"]
+            ].to_records(index=False)
+        )
+        
+
         if g11 == g12:
             G = nx.Graph()
-            G.add_edges_from(lr_pairs_g1.values)
-            self_loops = [(node, node) for node in G.nodes]
-            G.add_edges_from(self_loops)
+            G.add_weighted_edges_from(lr_pairs_g1)
+            self_loops = [(node, node, 1) for node in G.nodes]
+            G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
-            G.add_edges_from(lr_pairs_g1.values) 
-       
+            G.add_weighted_edges_from(lr_pairs_g1) 
         print(G)
+
+
+        # lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+        #         int_edges_new_with_selfloops.interaction == gpair,
+        #         ["cell1", "cell2"]
+        #     ]
+        # if g11 == g12:
+        #     G = nx.Graph()
+        #     G.add_edges_from(lr_pairs_g1.values)
+        #     self_loops = [(node, node) for node in G.nodes]
+        #     G.add_edges_from(self_loops)
+        # else:
+        #     G = nx.DiGraph()
+        #     G.add_edges_from(lr_pairs_g1.values) 
+       
+        # print(G)
         adata_gpair = adata[ list(G.nodes), ].copy()
         print(adata_gpair.shape)
         adata_gpair.uns['single_cell'] = False
@@ -1290,7 +1597,7 @@ def run_sdm(
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
 
-        sdm.extract_lr(adata_gpair, 'human', min_cell=20)
+        sdm.extract_lr(adata_gpair, species, min_cell=20)
         sdm.spatialdm_global(adata_gpair, 1000, specified_ind=None, method='z-score', nproc=nproc)     # global Moran selection
         sdm.sig_pairs(adata_gpair, method='z-score', fdr=True, threshold=0.1)     # select significant pairs
         sdm.spatialdm_local(adata_gpair, n_perm=1000, method='z-score', specified_ind=None, nproc=nproc)     # local spot selection

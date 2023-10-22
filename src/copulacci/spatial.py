@@ -4,6 +4,7 @@ from anndata import AnnData
 import squidpy as sq
 import networkx as nx
 import tqdm
+import scipy
 from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping, Sequence, Union
 
 
@@ -36,6 +37,8 @@ def construct_spatial_network(
 # Construct boundary between two groups
 def construct_boundary(
     adata: AnnData,
+    G: nx.Graph = None,
+    weight_mat : scipy.sparse._csr.csr_matrix = None,
     domanin_name: str = "celltype",
     boundary_type: str = "Internal"
 ) -> tuple:
@@ -56,10 +59,14 @@ def construct_boundary(
     
     # Go over all combinations
     # for (i,j) in itertools.combinations(cell_types, 2):
-    if ("spatial_network" not in adata.uns):
-        adata = construct_spatial_network(adata)
-    G = adata.uns["spatial_network"]
+    if G is None:
+        if ("spatial_network" not in adata.uns):
+            adata = construct_spatial_network(adata)
+        G = adata.uns["spatial_network"]
     # update node names
+    
+    if weight_mat is None:
+        weight_mat = adata.uns["spatial_network"]
     node_dict = {}
     print('relabeling nodes')
     G_with_names = G.copy()
@@ -69,19 +76,23 @@ def construct_boundary(
     adata.uns["spatial_network_names"] = G_with_names
     boundary_cell_type = []
     
-    for u,v in G.edges():
+    for u,v in tqdm.tqdm(G.edges()):
+
         boundary_cell_type += [[ 
             adata.obs.iloc[u].name, 
             adata.obs.iloc[v].name, 
             adata.obs.iloc[u][domanin_name],
-            adata.obs.iloc[v][domanin_name]  
+            adata.obs.iloc[v][domanin_name],
+            weight_mat[u,v]
         ]]
-        boundary_cell_type += [[ 
-                adata.obs.iloc[v].name, 
-                adata.obs.iloc[u].name, 
-                adata.obs.iloc[v][domanin_name],
-                adata.obs.iloc[u][domanin_name]  
-        ]]
+        if u != v:
+            boundary_cell_type += [[ 
+                    adata.obs.iloc[v].name, 
+                    adata.obs.iloc[u].name, 
+                    adata.obs.iloc[v][domanin_name],
+                    adata.obs.iloc[u][domanin_name],
+                    weight_mat[v,u]
+            ]] 
         
         # if (adata.obs.iloc[u][domanin_name] != adata.obs.iloc[v][domanin_name]):
         #     boundary_cell_type += [[ 
@@ -95,7 +106,7 @@ def construct_boundary(
             return("External")
         else:
             return("Internal")
-    boundary_df = pd.DataFrame(boundary_cell_type, columns=["cell1", "cell2", "celltype1", "celltype2"])
+    boundary_df = pd.DataFrame(boundary_cell_type, columns=["cell1", "cell2", "celltype1", "celltype2", "distance"])
     boundary_df["boundary_type"] = boundary_df.apply(determine_boundary, axis=1)
     boundary_df["interaction"] = boundary_df.apply(lambda x: "{}={}".format(x[2], x[3]), axis=1)
     int_edges = boundary_df
@@ -127,6 +138,7 @@ def construct_boundary(
             self_loops['celltype2'] = df.iloc[0,3]
             self_loops['boundary_type'] = df.iloc[0,4]
             self_loops['interaction'] = df.iloc[0,5]
+            self_loops['distance'] = 0
             int_edges_new_with_selfloops = pd.concat([int_edges_new_with_selfloops,self_loops.copy()], axis = 0)
         return (int_edges_new, int_edges_new_with_selfloops)
     else:
@@ -160,6 +172,7 @@ def extract_edge_from_spatial_network(
 
 def prepare_data_list_from_spatial_network():
     #TODO create data list from spatial network with distance
+    #Drop this
     pass
 
 
@@ -168,23 +181,33 @@ def prepare_data_list_from_spatial_network():
 def prepare_data_list(
     count_df: pd.DataFrame,
     int_edges_new_with_selfloops: pd.DataFrame,
-    groups: list,
+    groups: list = None,
     lig_rec_pair_list = None,
     heteromeric = False,
     lig_list = None,
     rec_list = None,
-    summarization = "min"
+    summarization = "min",
+    record_distance = True
 ) -> tuple:
     
+    if groups is None:
+        groups = int_edges_new_with_selfloops.interaction.unique().tolist()
     if not heteromeric:
+        if lig_rec_pair_list is None:
+            raise ValueError("lig_rec_pair_list must be provided")
         data_list_dict = {}
         umi_sums = {}
+        dist_list_dict = {}
         for g1 in tqdm.tqdm(groups):
             g1_dict = {}
             lr_pairs_g1 = int_edges_new_with_selfloops.loc[
                     int_edges_new_with_selfloops.interaction == g1,
                     ["cell1", "cell2"]
                 ]
+            dist_list_dict[g1] = int_edges_new_with_selfloops.loc[
+                    int_edges_new_with_selfloops.interaction == g1,
+                    "distance"
+            ].values
             g11, g12 = g1.split('=')
             _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
             _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
@@ -210,12 +233,17 @@ def prepare_data_list(
         assert(len(lig_list) == len(rec_list))
         data_list_dict = {}
         umi_sums = {}
+        dist_list_dict = {}
         for g1 in tqdm.tqdm(groups):
             g1_dict = {}
             lr_pairs_g1 = int_edges_new_with_selfloops.loc[
                     int_edges_new_with_selfloops.interaction == g1,
                     ["cell1", "cell2"]
                 ]
+            dist_list_dict[g1] = int_edges_new_with_selfloops.loc[
+                    int_edges_new_with_selfloops.interaction == g1,
+                    "distance"
+            ].values
             g11, g12 = g1.split('=')
             _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
             _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
@@ -266,18 +294,7 @@ def prepare_data_list(
             assert(len(g1_dict[g12]) == len(_umi_sum_rec))
             data_list_dict[g1] = data_list.copy()
 
-
-    return (data_list_dict, umi_sums)
-
-
-def prepare_differential_data_list(
-    count_df: pd.DataFrame,
-    int_edges_new_with_selfloops: pd.DataFrame,
-    lig_rec_pair_list: list,
-    groups: list,
-):
-    # Prepare data list for differential analysis
-    data_list_dict = {}
-    umi_sums = {}
-    g1, g2 = groups[0], groups[1]
-    # null model where x and y share the same correlation coeff
+    if record_distance:
+        return (data_list_dict, umi_sums, dist_list_dict)
+    else:
+        return (data_list_dict, umi_sums, None)
