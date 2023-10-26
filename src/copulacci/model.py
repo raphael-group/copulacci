@@ -20,9 +20,9 @@ import spatial
 import warnings
 
 import os
-os.environ['USE_PYGEOS'] = '0'
-import geopandas as gpd
-gpd.options.use_pygeos = True
+# os.environ['USE_PYGEOS'] = '0'
+# import geopandas as gpd
+# gpd.options.use_pygeos = True
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)

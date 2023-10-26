@@ -298,3 +298,94 @@ def prepare_data_list(
         return (data_list_dict, umi_sums, dist_list_dict)
     else:
         return (data_list_dict, umi_sums, None)
+
+
+# Prepare data list
+def prepare_data_list_cellype(
+    count_df: pd.DataFrame,
+    int_edges_new_with_selfloops: pd.DataFrame,
+    celltype ,
+    lig_rec_pair_list = None,
+    heteromeric = False,
+    lig_list = None,
+    rec_list = None,
+    summarization = "min",
+    record_distance = True
+) -> tuple:
+    data_list = []
+    umi_sums = {}
+    dist_list = []
+    lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+        int_edges_new_with_selfloops.celltype2 == celltype,
+        ["cell1", "cell2"]
+    ].copy()
+    
+    dist_list  = int_edges_new_with_selfloops.loc[
+            int_edges_new_with_selfloops.celltype2 == celltype,
+            "distance"
+    ].values
+    _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
+    _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
+    umi_sums['source'] = _umi_sum_lig.copy()
+    umi_sums['target'] = _umi_sum_rec.copy()
+
+    if not heteromeric:
+        if lig_rec_pair_list is None:
+            raise ValueError("lig_rec_pair_list must be provided")
+
+        data_list = []
+        for i,(lig, rec) in enumerate(lig_rec_pair_list):
+            data_list += [
+                (
+                    count_df.loc[ lr_pairs_g1.cell1.values, lig ].values.astype('int'),
+                    count_df.loc[ lr_pairs_g1.cell2.values, rec ].values.astype('int')
+                )
+                
+            ]
+    else:
+        if lig_list is None or rec_list is None:
+            raise ValueError("lig_list and rec_list must be provided")
+        assert(len(lig_list) == len(rec_list))
+
+        for i,(lig, rec) in enumerate(zip(lig_list, rec_list)):
+            _lig = [l for l in lig if l != None]
+            _rec = [r for r in rec if r != None]
+            if summarization == "min":
+                data_list += [
+                    (
+                        count_df.loc[ lr_pairs_g1.cell1.values, _lig ].min(axis=1).values.astype('int'),
+                        count_df.loc[ lr_pairs_g1.cell2.values, _rec ].min(axis=1).values.astype('int')
+                    )
+                    
+                ]
+            elif summarization == "max":
+                data_list += [
+                    (
+                        count_df.loc[ lr_pairs_g1.cell1.values, _lig ].max(axis=1).values.astype('int'),
+                        count_df.loc[ lr_pairs_g1.cell2.values, _rec ].max(axis=1).values.astype('int')
+                    )
+                    
+                ]
+            elif summarization == "mean":
+                data_list += [
+                    (
+                        count_df.loc[ lr_pairs_g1.cell1.values, _lig ].mean(axis=1).values.astype('int'),
+                        count_df.loc[ lr_pairs_g1.cell2.values, _rec ].mean(axis=1).values.astype('int')
+                    )
+                    
+                ]
+            elif summarization == "sum":
+                data_list += [
+                    (
+                        count_df.loc[ lr_pairs_g1.cell1.values, _lig ].sum(axis=1).values.astype('int'),
+                        count_df.loc[ lr_pairs_g1.cell2.values, _rec ].sum(axis=1).values.astype('int')
+                    )
+                    
+                ]
+            else:
+                raise ValueError("summarization must be one of min, max, mean, sum")
+
+    if record_distance:
+        return (data_list, umi_sums, dist_list)
+    else:
+        return (data_list, umi_sums, None)

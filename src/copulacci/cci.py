@@ -17,9 +17,9 @@ from omnipath.interactions import import_intercell_network
 import omnipath as om
 
 import os
-os.environ['USE_PYGEOS'] = '0'
-import geopandas as gpd
-gpd.options.use_pygeos = True
+# os.environ['USE_PYGEOS'] = '0'
+# import geopandas as gpd
+# gpd.options.use_pygeos = True
 
 
 def get_omnipath_int():
