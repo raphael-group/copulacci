@@ -285,7 +285,7 @@ def log_joint_lik_perm_old(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True
     return -logsum
 
 
-def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula'):
+def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula', return_sum = True):
     # get lam parameters for mu_1
     coeff = params[0]
     mu_1 = params[1]
@@ -307,19 +307,29 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
     
     # term1
     det = 1 - coeff**2
-    term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
-    term2 = (
-        np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
-        np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
-    )
+    if return_sum:
+        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+        term2 = (
+            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        )
+        
+        term3 = -0.5 * len(x) * np.log(det+EPSILON)
+        logsum = term1 + term2 + term3
     
-    term3 = -0.5 * len(x) * np.log(det+EPSILON)
-    logsum = term1 + term2 + term3
-   
-    return -logsum
+        return -logsum
+    else:
+        term1 = -0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1])
+        term2 = (
+            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
+            np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
+        )
+        term3 = -0.5 * np.log(det+EPSILON)
+        return (term1 + term2 + term3)
 
 
-def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, perm=100, DT=True, model = 'copula'):
+def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, 
+    perm=100, DT=True, model = 'copula', return_sum = True):
     # get lam parameters for mu_1
     rho_zero = params[0]
     rho_one = params[1]
@@ -343,17 +353,26 @@ def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, perm=
     
     # term1
     det = 1 - coeff_list**2
-    term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
+    if return_sum:
+        term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
+        
+        term2 = (
+            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        )
+        
+        term3 = np.sum(-0.5 * np.log(det+EPSILON))
+        logsum = term1 + term2 + term3
     
-    term2 = (
-        np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
-        np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
-    )
-    
-    term3 = np.sum(-0.5 * np.log(det+EPSILON))
-    logsum = term1 + term2 + term3
-   
-    return -logsum
+        return -logsum
+    else:
+        term1 = -0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1])
+        term2 = (
+            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
+            np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
+        )
+        term3 = -0.5 * np.log(det+EPSILON)
+        return (term1 + term2 + term3)
 
 def log_joint_lik_perm_grad_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list,  grad_list, perm=100, DT=True, model = 'copula'):
     # get lam parameters for mu_1
@@ -864,6 +883,197 @@ def merge_data_groups(
     return (data_list_merged, umi_sums_merged, dist_list_merged) 
 
 
+# TODO The alternate hypotheis has many different in-equality condition
+# that we are not testing therefore the llr is not correct
+# H_0 : (rho_group1 = rho_group2), but their mu_x and mu_y can be different
+#    or same. Which means ideally we should create an (1 + 2 + 2) parameter null model
+# H_1 : (rho_group1 != rho_group2), but their mu_x and mu_y can be same or anything
+#   which means ideally we should create an (2 + 2 + 2) parameter alternate model
+def run_diff_copula(
+    data_list_dict: dict,
+    umi_sums: dict,
+    group_1,
+    group_2,
+    dist_list_dict: dict = None,
+    lig_rec_pair_list = None,
+    n_jobs = 20,
+    verbose = 1,
+    method = 'Nelder-Mead',
+    perm = 10,
+    DT=True,
+    cutoff=0.6,
+    length_cutoff=20,
+    model_type='copula',
+    num_restarts = 1,
+    force=False,
+    quick=False,
+    type_run = 'full',
+    heteronomic = False,
+    df_lig_rec = None
+) -> pd.DataFrame:
+    if isinstance(group_1, list) and len(group_1) > 1:
+        raise ValueError('groups_1 has more than one group: not implemented yet')
+    if isinstance(group_2, list) and len(group_2) > 1:
+        raise ValueError('groups_2 has more than one group: not implemented yet')
+    # null model
+    # Fow all the ligands and receptors the null model 
+    # assumes that the interaction coefficient is same
+    # We merge the groups and run the copula
+    print('Running null hypothesis on merged data')
+    data_list_merged, umi_sums_merged, dist_list_merged = merge_data_groups(
+        [group_1, group_2],
+        data_list_dict,
+        umi_sums,
+        dist_list_dict = dist_list_dict,
+    )
+    likvalues_null = []
+    if dist_list_dict is None:
+        res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                delayed(call_optimizer_dense)(
+                    x,
+                    y,
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
+                    method=method,
+                    perm=perm,
+                    DT=DT,
+                    cutoff=cutoff,
+                    length_cutoff=length_cutoff,
+                    model=model_type,
+                    num_restarts = num_restarts,
+            quick=quick) for (x,y) in data_list_merged)
+        # Get likelihoods for these values
+        tmp = pd.DataFrame(res,columns=['merged_null','null_mu_x',
+                                        'null_mu_y','null_copula_method'])
+        likvalues_null = []
+        for i, row in enumerate(tmp.iterrows()):
+            rho, mu_x, mu_y, meth = row[1]
+            if meth == 'copula':
+                likvalues_null += [log_joint_lik_perm(
+                    [rho, mu_x, mu_y], 
+                    umi_sums_merged['ligand'], 
+                    umi_sums_merged['receptor'], 
+                    data_list_merged[i][0],
+                    data_list_merged[i][1],
+                    perm=perm, 
+                    DT=DT, 
+                    model=model_type) 
+                ]
+            else:
+                likvalues_null += [0]
+        likvalues_null = -np.array(likvalues_null)
+        tmp['merged_null_lik'] = likvalues_null
+    else:
+        res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+            delayed(call_optimizer_dense_dist)(
+                x,
+                y,
+                umi_sums_merged['ligand'],
+                umi_sums_merged['receptor'],
+                dist_list_merged,
+                method=method,
+                perm=perm,
+                DT=DT,
+                cutoff=cutoff,
+                length_cutoff=length_cutoff,
+                model=model_type,
+                num_restarts = num_restarts
+                ) for (x,y) in data_list_merged
+        )
+        # Get likelihoods for these values
+        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x', 
+                                        'null_mu_y', 'null_copula_method'])
+        likvalues_null = []
+        
+        for i, row in enumerate(tmp.iterrows()):
+            rho_zero, rho_one, mu_x, mu_y, meth = row[1]
+            if meth == 'copula':
+                likvalues_null += [log_joint_lik_perm_dist(
+                    [rho_zero, rho_one, mu_x, mu_y], 
+                    umi_sums_merged['ligand'], 
+                    umi_sums_merged['receptor'], 
+                    data_list_merged[i][0], 
+                    data_list_merged[i][1], 
+                    dist_list_merged,
+                    perm=perm, 
+                    DT=DT, 
+                    model=model_type) 
+                ]
+            else:
+                likvalues_null += [0]
+        likvalues_null = -np.array(likvalues_null)
+        tmp['merged_null_lik'] = likvalues_null
+    null_df = tmp.copy()
+    # alternative model
+    # Run for group1
+    cop_alt_df = run_copula(
+        data_list_dict,
+        umi_sums,
+        dist_list_dict,
+        DT=DT,
+        cutoff = cutoff,
+        type_run='dense',
+        num_restarts=1,
+        df_lig_rec=df_lig_rec,
+        heteronomic=True,
+        groups = [group_1, group_2]
+    )
+    # Calculate likelihoods
+    
+    likvalues_alt = {}
+    if dist_list_dict is None:
+        for g in [group_1, group_2]:
+            print('alternate hypothesis on ', g)
+            g1, g2 = g.split('=')
+            likvalues = []
+            for i, [rho, mu_x, mu_y, meth] in enumerate(cop_alt_df[g].values):
+                if meth == 'copula':
+                    likvalues += [log_joint_lik_perm(
+                        [rho, mu_x, mu_y], 
+                        umi_sums[g][g1], 
+                        umi_sums[g][g2], 
+                        data_list_dict[g][i][0],
+                        data_list_dict[g][i][1],
+                        perm=perm, 
+                        DT=DT, 
+                        model=model_type) 
+                    ]
+                else:
+                    likvalues += [0]
+            likvalues_alt[g1] = (-np.array(likvalues)).copy()
+    else:
+        for g in [group_1, group_2]:
+            print('alternate hypothesis on ', g)
+            g1, g2 = g.split('=')
+            likvalues = []
+            for i, [rho_zero, rho_one, mu_x, mu_y, meth] in enumerate(cop_alt_df[g].values):
+                if meth == 'copula':
+                    likvalues += [log_joint_lik_perm_dist(
+                        [rho_zero, rho_one, mu_x, mu_y], 
+                        umi_sums[g][g1], 
+                        umi_sums[g][g2], 
+                        data_list_dict[g][i][0],
+                        data_list_dict[g][i][1],
+                        dist_list_dict[g],
+                        perm=perm, 
+                        DT=DT, 
+                        model=model_type) 
+                    ]
+                else:
+                    likvalues += [0]
+            likvalues_alt[g1] = (-np.array(likvalues)).copy()
+
+    likhood_df = np.hstack(
+        (np.array(list(likvalues_alt.values())).T, likvalues_null[:, np.newaxis])
+    )
+    likhood_df = pd.DataFrame(likhood_df, columns=['alt_0', 'alt_1', 'null'])
+    lr =  -2*(likhood_df_nz['null'] - 
+        ( likhood_df_nz['alt_0'] + likhood_df_nz['alt_1'] )
+    )
+    likhood_df['lr'] = lr  
+    return likhood_df
+    
+
 def run_diff_copula(
     data_list_dict: dict,
     umi_sums: dict,
@@ -1197,6 +1407,8 @@ def add_copula_pval(
     data_list_dict: dict,
     res_dict: dict,
     umi_sums: dict,
+    dist_list_dict: dict = None,
+    lig_rec_pair_list = None,
     df_lig_rec: pd.DataFrame = None,
     int_edges_new_with_selfloops: pd.DataFrame = None,
     count_df: pd.DataFrame = None,
@@ -1206,11 +1418,15 @@ def add_copula_pval(
     method = 'Nelder-Mead',
     DT=False,
     cutoff=0.8,
+    perm = 20,
+    length_cutoff=20,
     model='copula',
     num_restarts = 1,
     quick=True,
     n = 1000,
     groups = None,
+    heteronomic = True,
+    remove_identical = True,
     permute_data = True
 ) -> pd.DataFrame:
     
@@ -1226,50 +1442,92 @@ def add_copula_pval(
             print('permutation test for ...', g1)
             g11, g12 = g1.split('=')
             res_bg = res_dict[g1].copy()
+
+            # Get the interesting pairs
+            if heteronomic:
+                res_bg.loc[:, 'lig_rec'] = res_bg.index
+                res_bg.index = range(len(res_bg))
+                if remove_identical:
+                    res_bg = res_bg.loc[res_bg.lig_rec.str.split('_').str[0] != res_bg.lig_rec.str.split('_').str[1]].copy()
+                
             data_list = data_list_dict[g1]
             res_bg = res_bg.loc[res_bg.copula_method == 'copula']
             if len(res_bg) == 0:
                 continue
 
+            # if distance based then there is no copula_coeff, but there
+            # is rho_zero which is copula_coeff effectively. So take a copy
+            if not 'copula_coeff' in res_bg.columns:
+                res_bg['copula_coeff'] = res_bg['rho_zero'].copy()
+            
+                
             intersting_pairs = res_bg[res_bg['copula_coeff'] >= np.percentile(res_bg.copula_coeff.values, percentile_cutoff)].index
             res_bg = res_bg.loc[ intersting_pairs ]
             res_bg['pval'] = 1.0
+                
+            
             # Do permutation test on them
             interval = int(len(intersting_pairs) / 10)
-            print('found ', len(intersting_pairs), ' pairs..') 
+            print('found ', len(intersting_pairs), ' pairs..')
+            progress = 0 
             for i in intersting_pairs:
                 #if i%interval == 0:
-                print(".", end='', flush=True)
+                print(progress, end='\r', flush=True)
+                #print(i, end='\r', flush=True)
                 x,y = data_list[i]
                 I = res_bg.loc[i].copula_coeff
                 perm_data_list = []
                 for _ in range(n):
                     x1 = x.copy()
+                    y1 = y.copy()
                     np.random.shuffle(x1)
                     perm_data_list += [
                         (
                         x1.copy(),
-                        y
+                        y1.copy()
                         )
                         
                     ]
-                res_perm = Parallel(n_jobs=n_jobs, verbose=verbose)(
-                        delayed(call_optimizer_dense)(
-                            x,
-                            y,
-                            umi_sums[g1][g11],
-                            umi_sums[g1][g12],
-                            method=method,
-                            perm=20,
-                            DT=DT,
-                            cutoff=cutoff,
-                            model=model,
-                            num_restarts = num_restarts,
-                            quick=quick) for (x,y) in perm_data_list)
-                res_perm = [r[0] for r in res_perm]
-                res_perm += [I]
-                pvalue = np.sum(np.array(res_perm) > I) / (n+1)
-                res_bg.loc[i, 'pval'] = pvalue
+                if dist_list_dict is None:
+                    res_perm = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                            delayed(call_optimizer_dense)(
+                                x,
+                                y,
+                                umi_sums[g1][g11],
+                                umi_sums[g1][g12],
+                                method=method,
+                                perm=perm,
+                                DT=DT,
+                                cutoff=cutoff,
+                                length_cutoff=length_cutoff,
+                                model=model,
+                                num_restarts = num_restarts,
+                                quick=quick) for (x,y) in perm_data_list)
+                    res_perm = [r[0] for r in res_perm]
+                    res_perm += [I]
+                    pvalue = np.sum(np.array(res_perm) > I) / (n+1)
+                    res_bg.loc[i, 'pval'] = pvalue
+                else:
+                    res_perm = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                            delayed(call_optimizer_dense_dist)(
+                                x,
+                                y,
+                                umi_sums[g1][g11],
+                                umi_sums[g1][g12],
+                                dist_list_dict[g1],
+                                method=method,
+                                perm=perm,
+                                DT=DT,
+                                cutoff=cutoff,
+                                length_cutoff=length_cutoff,
+                                model=model,
+                                num_restarts = num_restarts
+                                ) for (x,y) in perm_data_list)
+                    res_perm = [r[0] for r in res_perm]
+                    res_perm += [I]
+                    pvalue = np.sum(np.array(res_perm) > I) / (n+1)
+                    res_bg.loc[i, 'pval'] = pvalue
+                progress += 1
             _,res_bg['qval'], _, _ = sm.stats.multipletests(res_bg.pval.values,alpha=0.05, method='fdr_bh')
             res_bg['celltype_direction'] = g1 
             final_res_cop = pd.concat([final_res_cop, res_bg.copy()], axis = 0)
@@ -1278,6 +1536,8 @@ def add_copula_pval(
                   time.time() - start_time, ' seconds')
     else:
         # Make random L-R pairs
+        if heteronomic:
+            raise ValueError('For heteronomic ligand-receptors the ligand-receptor pairs permutation is not implemented yet.')
         df_lig_rec_rand = pd.DataFrame(columns=df_lig_rec.columns)
         df_lig_rec_rand.loc[:,'ligand'] = random.choices(
             list(df_lig_rec.ligand.values), 
@@ -1597,7 +1857,11 @@ def run_sdm(
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
 
-        sdm.extract_lr(adata_gpair, species, min_cell=20)
+        try: 
+            sdm.extract_lr(adata_gpair, species, min_cell=20)
+        except:
+            print('no effective LR found')
+            continue
         sdm.spatialdm_global(adata_gpair, 1000, specified_ind=None, method='z-score', nproc=nproc)     # global Moran selection
         sdm.sig_pairs(adata_gpair, method='z-score', fdr=True, threshold=0.1)     # select significant pairs
         sdm.spatialdm_local(adata_gpair, n_perm=1000, method='z-score', specified_ind=None, nproc=nproc)     # local spot selection

@@ -1814,3 +1814,109 @@ def plot_scatter_hist(x,y):
     ax_histy = fig.add_subplot(gs[1, 1], sharey=ax)
     # Draw the scatter plot and marginals.
     scatter_hist(x, y, ax, ax_histx, ax_histy)
+
+
+def plot_lr_activity_color(
+    lig_rec_idx,
+    ct,
+    res,
+    loc_df,
+    int_edges_new,
+    umi_sums_ct_dict,
+    data_list_ct_dict,
+    dist_list_ct_dict
+):
+    
+    rho_zero,rho_one,mu_x,mu_y,copula_method,idx = res.loc[lig_rec_idx]
+    loglikvec =  model.log_joint_lik_perm_dist(
+            [rho_zero,rho_one,mu_x,mu_y],
+            umi_sums_ct_dict[ct]['source'],
+            umi_sums_ct_dict[ct]['target'],
+            data_list_ct_dict[ct][idx][0],
+            data_list_ct_dict[ct][idx][1],
+            dist_list_ct_dict[ct],
+            perm=20,
+            DT=False,
+            model='copula',
+            return_sum=False
+        
+        )
+    loglikvec = -loglikvec
+    lr_pairs_ct = int_edges_new.loc[
+        int_edges_new.celltype2 == ct,
+        :
+    ].copy()
+    fig, ax = plt.subplots(figsize=(6,6))
+    cmap = plt.get_cmap('Reds')
+    norm = Normalize(vmin=min(loglikvec), vmax=max(loglikvec))
+    sm = ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([]) 
+    # Remove the legend and add a colorbar
+    ax.scatter(loc_df['x'], loc_df['y'], c= "grey", s=0.1,alpha = 0.1)
+    #sns.scatterplot(data = int_loc_df, x = "x", y = "y", s = 8, hue='dist_from_z', ax=ax, alpha=0.8,label='start')
+    
+    for i,edge in enumerate(lr_pairs_ct[['cell1', 'cell2']].values):
+        color = cmap(norm(loglikvec[i]))
+        x1, y1 = loc_df.loc[  edge[0], 'x' ], loc_df.loc[  edge[0], 'y' ]
+        x2, y2 = loc_df.loc[  edge[1], 'x' ], loc_df.loc[  edge[1], 'y' ]
+        ax.plot([x1, x2], [y1, y2], color=color, marker='o', 
+                linestyle='-', markersize=0.5,linewidth=1)
+    cbar = plt.colorbar(sm, ax=ax, label='Loglikelihood')
+    #ax.get_legend().remove()
+    ax.set_title(lig_rec_idx + "\nALL" + ' → '+ ct)
+    plt.gca().invert_yaxis()
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([]);
+    plt.xlabel("spatial1")
+    plt.ylabel("spatial2")
+
+
+def plot_raw_lr_expression(
+    lig_rec_idx,
+    ct,
+    res,
+    loc_df,
+    count_df,
+    int_edges_new
+):
+    
+    rho_zero,rho_one,mu_x,mu_y,copula_method,idx = res.loc[lig_rec_idx]
+    lr_pairs_ct = int_edges_new.loc[
+        int_edges_new.celltype2 == ct,
+        :
+    ].copy()
+    genes_to_show = lig_rec_idx.split("_")
+    
+    #sns.scatterplot(data = int_loc_df, x = "x", y = "y", s = 8, hue='dist_from_z', ax=ax, alpha=0.8,label='start')
+    selected_cells = list(
+        set(lr_pairs_ct.cell1.unique()).union(
+            lr_pairs_ct.cell2.unique()   
+        )
+    )
+    fig, ax = plt.subplots(1,len(genes_to_show),
+                           figsize=(5*len(genes_to_show),5))
+    for i,gene in enumerate(genes_to_show):
+        ax[i].scatter(loc_df['x'], loc_df['y'], c= "grey", s=0.1,alpha = 0.1)
+        colors = np.array(count_df.loc[selected_cells, gene].values)
+        tmp = loc_df.loc[selected_cells,:].copy()
+        tmp.loc[:, 'gene'] = colors
+        sns.scatterplot(x='x', y='y', hue='gene',
+                             palette='Reds',s=20, data=tmp,alpha=0.7,ax= ax[i])
+
+        norm = plt.Normalize(tmp['gene'].min(), tmp['gene'].max())
+        sm = plt.cm.ScalarMappable(cmap="Reds", norm=norm)
+        sm.set_array([])
+        
+        # Remove the legend and add a colorbar
+        ax[i].get_legend().remove()
+        
+    
+        ax[i].set_title(gene + "\nALL" + ' → '+ ct)
+        ax[i].figure.colorbar(sm,ax=ax[i])
+        ax[i].invert_yaxis()
+        ax[i].set_xticks([])
+        ax[i].set_yticks([]);
+        ax[i].set_xlabel("spatial1")
+        ax[i].set_ylabel("spatial2")
+    plt.tight_layout()
+    plt.show()

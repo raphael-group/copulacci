@@ -304,7 +304,8 @@ def prepare_data_list(
 def prepare_data_list_cellype(
     count_df: pd.DataFrame,
     int_edges_new_with_selfloops: pd.DataFrame,
-    celltype ,
+    source_celltype = None ,
+    target_celltype = None ,
     lig_rec_pair_list = None,
     heteromeric = False,
     lig_list = None,
@@ -312,20 +313,44 @@ def prepare_data_list_cellype(
     summarization = "min",
     record_distance = True
 ) -> tuple:
+
+    if source_celltype is None and target_celltype is None:
+        raise ValueError("source_celltype or target_celltype must be provided")
+
     data_list = []
     umi_sums = {}
     dist_list = []
-    lr_pairs_g1 = int_edges_new_with_selfloops.loc[
-        int_edges_new_with_selfloops.celltype2 == celltype,
-        ["cell1", "cell2"]
-    ].copy()
-    
-    dist_list  = int_edges_new_with_selfloops.loc[
+
+    if source_celltype is None:
+        celltype = target_celltype
+        lr_pairs_g1 = int_edges_new_with_selfloops.loc[
             int_edges_new_with_selfloops.celltype2 == celltype,
-            "distance"
-    ].values
-    _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
-    _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
+            ["cell1", "cell2"]
+        ].copy()
+        
+        dist_list  = int_edges_new_with_selfloops.loc[
+                int_edges_new_with_selfloops.celltype2 == celltype,
+                "distance"
+        ].values
+        _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
+        _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
+    elif target_celltype is None:
+        celltype = source_celltype
+        lr_pairs_g1 = int_edges_new_with_selfloops.loc[
+            int_edges_new_with_selfloops.celltype1 == celltype,
+            ["cell1", "cell2"]
+        ].copy()
+        
+        dist_list  = int_edges_new_with_selfloops.loc[
+                int_edges_new_with_selfloops.celltype1 == celltype,
+                "distance"
+        ].values
+        _umi_sum_lig = count_df.loc[ lr_pairs_g1.cell1.values, : ].sum(1).values
+        _umi_sum_rec = count_df.loc[ lr_pairs_g1.cell2.values, : ].sum(1).values
+    else:
+        celltype = "{}={}".format(source_celltype, target_celltype)
+
+
     umi_sums['source'] = _umi_sum_lig.copy()
     umi_sums['target'] = _umi_sum_rec.copy()
 
