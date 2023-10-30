@@ -1,36 +1,23 @@
-import numpy as np
-import pandas as pd
-from scipy import stats
-from scipy import linalg
-EPSILON = 1.1920929e-07
-import matplotlib.pyplot as plt
-import seaborn as sns
-from joblib import Parallel, delayed
-import scanpy as sc
-import pandas as pd
-import spatialdm as sdm
-import squidpy as sq
-import tqdm
-import adjustText
-from scipy.optimize import minimize, minimize_scalar
-from sklearn.neighbors import NearestNeighbors
-import importlib
-import networkx as nx
-import os
-#import gseapy_like_plot as pl
-from adjustText import adjust_text
-
 import itertools
+import sys
+import os
+import pandas as pd
+import scanpy as sc
+import spatialdm as sdm
+import networkx as nx
+#import gseapy_like_plot as pl
+
 score_pair = list(itertools.combinations(['rho_zero', 'scc','global_I'],2))
 
 
 # custom package import
-import sys
 sys.path.append("/Users/hs0424/Workspace/copulacci/src/copulacci/")
 import cci
 import spatial
 import model
 
+
+EPSILON = 1.1920929e-07
 # 
 print("Loading spatial data")
 # adata = sc.read_visium('/Users/hs0424/Workspace/copulacci/data/3.Human_Breast_Cancer/')
@@ -54,7 +41,7 @@ sdm.weight_matrix(adata_sdm, l=273, single_cell=False)
 G = nx.from_scipy_sparse_array(adata_sdm.obsp['nearest_neighbors'])
 adata.obs['celltype'] = adata.obs.annot_type
 int_edges_new, int_edges_with_selfloop = spatial.construct_boundary(
-    adata, 
+    adata,
     G = G,
     weight_mat=adata_sdm.obsp['weight']
 )
@@ -128,7 +115,7 @@ for gpair in cop_df_dict.keys():
 # Concatenate the results for individual groups
 
 merged_df = pd.concat(merged_res.values(), axis = 0)
-pd.write_csv(
+merged_df.to_csv(
     os.path.join(data_dir,'merged_df_3_methods.csv'),
     sep = ',',
     index = False
@@ -148,7 +135,7 @@ final_res_cop = model.add_copula_pval(
     heteronomic = True
 )
 
-pd.write_csv(
+final_res_cop.to_csv(
     os.path.join(data_dir,'final_res_copula.csv'),
     sep = ',',
     index = False
