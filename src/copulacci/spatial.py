@@ -38,9 +38,10 @@ def construct_spatial_network(
 def construct_boundary(
     adata: AnnData,
     G: nx.Graph = None,
-    weight_mat : scipy.sparse._csr.csr_matrix = None,
+    weight_mat: scipy.sparse._csr.csr_matrix = None,
     domanin_name: str = "celltype",
-    boundary_type: str = "Internal"
+    boundary_type: str = "Internal",
+    add_self_loops: bool = True
 ) -> tuple:
     """
     Construct boundary from spatial data and annotation.
@@ -59,14 +60,20 @@ def construct_boundary(
     
     # Go over all combinations
     # for (i,j) in itertools.combinations(cell_types, 2):
+    G_was_given = True
+
     if G is None:
         if ("spatial_network" not in adata.uns):
             adata = construct_spatial_network(adata)
         G = adata.uns["spatial_network"]
+        G_was_given = False
+    
     # update node names
     
     if weight_mat is None:
-        weight_mat = adata.uns["spatial_network"]
+        weight_mat = nx.adjacency_matrix(
+            adata.uns["spatial_network"]
+        )
     node_dict = {}
     print('relabeling nodes')
     G_with_names = G.copy()
@@ -76,7 +83,7 @@ def construct_boundary(
     adata.uns["spatial_network_names"] = G_with_names
     boundary_cell_type = []
     
-    for u,v in tqdm.tqdm(G.edges()):
+    for u, v in tqdm.tqdm(G.edges()):
 
         boundary_cell_type += [[ 
             adata.obs.iloc[u].name, 
@@ -101,6 +108,17 @@ def construct_boundary(
         #         adata.obs.iloc[v][domanin_name],
         #         adata.obs.iloc[u][domanin_name]  
         # ]]
+
+    # Adding self loops
+    if ((not G_was_given) and add_self_loops):
+        for u in tqdm.tqdm(G.nodes()):
+            boundary_cell_type += [[ 
+                adata.obs.iloc[u].name, 
+                adata.obs.iloc[u].name, 
+                adata.obs.iloc[u][domanin_name],
+                adata.obs.iloc[u][domanin_name],
+                0
+            ]]
     def determine_boundary(x):
         if (x[2] != x[3]):
             return("External")
@@ -109,41 +127,59 @@ def construct_boundary(
     boundary_df = pd.DataFrame(boundary_cell_type, columns=["cell1", "cell2", "celltype1", "celltype2", "distance"])
     boundary_df["boundary_type"] = boundary_df.apply(determine_boundary, axis=1)
     boundary_df["interaction"] = boundary_df.apply(lambda x: "{}={}".format(x[2], x[3]), axis=1)
-    int_edges = boundary_df
-    external_edges = int_edges.loc[int_edges.boundary_type == "External"]
+    int_edges = boundary_df.copy()
+
+    # Remove self loops
+    int_edges = int_edges.loc[ int_edges.cell1 != int_edges.cell2, : ]
+    external_edges = int_edges.loc[int_edges.boundary_type == "External"].copy()
     pivoted_external = pd.concat( [
-            external_edges[["cell1","interaction"]].rename(columns = {"cell1": "cell"}), 
-            external_edges[["cell2","interaction"]].rename(columns = {"cell2": "cell"}) 
+            external_edges[["cell1", "interaction"]].rename(columns = {"cell1": "cell"}), 
+            external_edges[["cell2", "interaction"]].rename(columns = {"cell2": "cell"}) 
         ], 
         axis = 0, ignore_index=True
     )
     external_cells = pivoted_external.cell.unique()
     internal_edges = int_edges.loc[ 
             ~(int_edges.cell1.isin(external_cells) | int_edges.cell2.isin(external_cells)), 
-        :]
-    int_edges_new = pd.concat([internal_edges, external_edges], axis=0, ignore_index=True)
-    internal_groups = int_edges_new.loc[int_edges_new.boundary_type == 'Internal','interaction'].unique(
-        ).tolist()
+        :].copy()
+    # just self-loops
+    self_loop_edges = boundary_df.loc[ boundary_df.cell1 == boundary_df.cell2, :].copy()
+    int_edges_with_selfloops = pd.concat([internal_edges, external_edges, self_loop_edges], axis=0, ignore_index=True)
+    int_edges_without_selfloops = pd.concat([internal_edges, external_edges], axis=0, ignore_index=True)
+
+    return (int_edges_without_selfloops, int_edges_with_selfloops)
     
-    if boundary_type == "Internal":
-        int_edges_new_with_selfloops = int_edges_new.copy()
-        for group_pair in internal_groups:
-            # get cells within a group
-            df = int_edges_new.loc[int_edges_new.interaction == group_pair]
-            self_loops = pd.DataFrame(columns = df.columns)
-            all_cells = list(set(df.cell1).union(set(df.cell2)))
-            self_loops['cell1'] = all_cells
-            self_loops['cell2'] = all_cells
-            self_loops['celltype1'] = df.iloc[0,2]
-            self_loops['celltype2'] = df.iloc[0,3]
-            self_loops['boundary_type'] = df.iloc[0,4]
-            self_loops['interaction'] = df.iloc[0,5]
-            self_loops['distance'] = 0
-            int_edges_new_with_selfloops = pd.concat([int_edges_new_with_selfloops,self_loops.copy()], axis = 0)
-        return (int_edges_new, int_edges_new_with_selfloops)
-    else:
-        # Don't add self loops
-        return (int_edges_new, None)
+    # internal_groups = int_edges_new.loc[int_edges_new.boundary_type == 'Internal','interaction'].unique(
+    #     ).tolist()
+    
+    # int_edges_new = int_edges_with_selfloops.copy()
+    # # remove internal edges
+    # int_edges_new = int_edges_new.loc[int_edges_new.boundary_type == 'External',:]
+    # # One without self loops
+    # int_edges_without_selfloops = int_edges_new_
+
+    # # For each node in the graph add a self loof if it's
+    # # not already present.
+
+    # if boundary_type == "Internal":
+    #     int_edges_new_with_selfloops = int_edges_new.copy()
+    #     for group_pair in internal_groups:
+    #         # get cells within a group
+    #         df = int_edges_new.loc[int_edges_new.interaction == group_pair]
+    #         self_loops = pd.DataFrame(columns = df.columns)
+    #         all_cells = list(set(df.cell1).union(set(df.cell2)))
+    #         self_loops['cell1'] = all_cells
+    #         self_loops['cell2'] = all_cells
+    #         self_loops['celltype1'] = df.iloc[0,2]
+    #         self_loops['celltype2'] = df.iloc[0,3]
+    #         self_loops['boundary_type'] = df.iloc[0,4]
+    #         self_loops['interaction'] = df.iloc[0,5]
+    #         self_loops['distance'] = 1
+    #         int_edges_new_with_selfloops = pd.concat([int_edges_new_with_selfloops,self_loops.copy()], axis = 0)
+    #     return (int_edges_new, int_edges_new_with_selfloops)
+    # else:
+    #     # Don't add self loops
+    #     return (int_edges_new, None)
 
 
 def extract_edge_from_spatial_network(

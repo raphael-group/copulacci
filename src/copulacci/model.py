@@ -1,31 +1,33 @@
+# import os
+import random
+import time
 import numpy as np
 import pandas as pd
-import time
 from scipy import stats
 from scipy import linalg
-EPSILON = 1.1920929e-07
 import matplotlib.pyplot as plt
-import seaborn as sns
 from joblib import Parallel, delayed
 import scanpy as sc
-import pandas as pd
 import spatialdm as sdm
 from sklearn.preprocessing import normalize
 from spatialdm.diff_utils import *
-from scipy.optimize import minimize, minimize_scalar
+from scipy.optimize import minimize
 import networkx as nx
 import statsmodels.api as sm
-import random
+
 import spatial
 import warnings
 
-import os
+
 # os.environ['USE_PYGEOS'] = '0'
 # import geopandas as gpd
 # gpd.options.use_pygeos = True
 
 warnings.filterwarnings("ignore", category=FutureWarning)
 warnings.filterwarnings("ignore", category=UserWarning)
+
+EPSILON = 1.1920929e-07
+
 
 def get_dt_cdf(x, lam, DT=True):
     u_x = stats.poisson.cdf(x, lam).clip(EPSILON, 1 - EPSILON)
