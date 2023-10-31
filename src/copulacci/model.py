@@ -775,8 +775,8 @@ def run_copula(
                             cutoff=cutoff,
                             length_cutoff=length_cutoff,
                             model=model,
-                            num_restarts = num_restarts,
-                            quick=quick) for (x,y) in data_list)
+                            num_restarts = num_restarts
+                         ) for (x,y) in data_list)
                 #tmp = pd.DataFrame(res,columns=[g1,g11+'_mu_x',g12+'_mu_y',g1+'_copula_method'])
                 tmp = pd.DataFrame(res,columns=[
                     'copula_coeff',
@@ -1803,7 +1803,8 @@ def run_sdm(
     groups: list=None,
     nproc: int = 10,
     species = 'human',
-    heteronomic = False
+    heteronomic = False,
+    add_self_loops = True
 ) -> dict:
     
     sdm_dfs = {}
@@ -1829,11 +1830,15 @@ def run_sdm(
         if g11 == g12:
             G = nx.Graph()
             G.add_weighted_edges_from(lr_pairs_g1)
-            self_loops = [(node, node, 1) for node in G.nodes]
-            G.add_weighted_edges_from(self_loops)
+            if add_self_loops:
+                self_loops = [(node, node, 1) for node in G.nodes]
+                G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
             G.add_weighted_edges_from(lr_pairs_g1) 
+
+       
+
         print(G)
 
 
