@@ -1503,8 +1503,8 @@ def add_copula_pval(
                                 cutoff=cutoff,
                                 length_cutoff=length_cutoff,
                                 model=model,
-                                num_restarts = num_restarts,
-                                quick=quick) for (x,y) in perm_data_list)
+                                num_restarts = num_restarts
+                            ) for (x,y) in perm_data_list)
                     res_perm = [r[0] for r in res_perm]
                     res_perm += [I]
                     pvalue = np.sum(np.array(res_perm) > I) / (n+1)
