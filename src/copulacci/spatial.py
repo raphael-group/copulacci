@@ -12,8 +12,9 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping, Sequence, Uni
 def construct_spatial_network(
     adata: AnnData,
     data_type: str = "visium",
-    n_neighs: int = 10
-) -> AnnData:
+    n_neighs: int = 10,
+    n_rings: int = 3,
+) :
     """
     Construct spatial network from spatial data.
     Arguments:
@@ -23,7 +24,7 @@ def construct_spatial_network(
         AnnData object
     """
     if (data_type == "visium"):
-        sq.gr.spatial_neighbors(adata)
+        sq.gr.spatial_neighbors(adata, n_rings=n_rings, coord_type="grid")
     else:
         sq.gr.spatial_neighbors(adata, n_neighs=n_neighs, coord_type="generic")
     
@@ -31,7 +32,6 @@ def construct_spatial_network(
     G = nx.from_scipy_sparse_array(adata.obsp["spatial_connectivities"])
     adata.uns['spatial_network'] = G
 
-    return(adata)
 
 
 # Construct boundary between two groups
@@ -41,7 +41,9 @@ def construct_boundary(
     weight_mat: scipy.sparse._csr.csr_matrix = None,
     domanin_name: str = "celltype",
     boundary_type: str = "Internal",
-    add_self_loops: bool = True
+    add_self_loops: bool = True,
+    n_rings: int = 3,
+    data_type: str = "visium"
 ) -> tuple:
     """
     Construct boundary from spatial data and annotation.
