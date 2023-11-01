@@ -45,6 +45,10 @@ df_lig_rec_linear = cci.extract_lig_rec_from_sdm(adata, allow_same_lr=True)
 chosen_lr = list(set( df_lig_rec_linear.ligand.unique()).union(
     set( df_lig_rec_linear.receptor.unique() )
 ))
+
+adata.X = adata.layers['count']
+adata.raw = adata.copy()
+
 count_df = adata.raw.to_adata().to_df().loc[:,chosen_lr]
 lig_list = adata.uns['ligand'].values
 rec_list = adata.uns['receptor'].values
