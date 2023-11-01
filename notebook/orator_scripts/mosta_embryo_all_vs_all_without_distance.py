@@ -18,6 +18,7 @@ print("Loading spatial data",flush=True)
 
 # Clean up the data
 adata = sc.read_h5ad('/n/fs/ragr-data/datasets/spatial_transcriptomics/Stereoseq/mosta_mouse_embryo/E9.5_E1S1.MOSTA.h5ad')
+adata.obs['celltype'] = adata.obs.annotation
 adata.obs = adata.obs[['n_genes_by_counts', 'log1p_n_genes_by_counts', 'total_counts',
        'log1p_total_counts', 'annotation', 'celltype']]
 adata.var = adata.var[['n_cells', 'n_cells_by_counts', 'mean_counts', 'log1p_mean_counts',
@@ -25,7 +26,6 @@ adata.var = adata.var[['n_cells', 'n_cells_by_counts', 'mean_counts', 'log1p_mea
 
 
 sdm.extract_lr(adata, 'mouse', min_cell=20)
-adata.obs['celltype'] = adata.obs.annotation
 
 print("Constructing boundary",flush=True)
 spatial.construct_spatial_network(adata, n_rings=2)
