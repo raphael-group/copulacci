@@ -1800,6 +1800,7 @@ def run_scc(
 def run_sdm(
     adata_orig: sc.AnnData,
     int_edges_new_with_selfloops: pd.DataFrame,
+    min_cell: int = 3,
     groups: list=None,
     nproc: int = 10,
     species = 'human',
@@ -1865,7 +1866,7 @@ def run_sdm(
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
 
         try: 
-            sdm.extract_lr(adata_gpair, species, min_cell=20)
+            sdm.extract_lr(adata_gpair, species, min_cell=min_cell)
         except:
             print('no effective LR found')
             continue
@@ -1874,7 +1875,7 @@ def run_sdm(
         sdm.spatialdm_local(adata_gpair, n_perm=1000, method='z-score', specified_ind=None, nproc=nproc)     # local spot selection
         sdm.sig_spots(adata_gpair, method='z-score', fdr=False, threshold=0.1)
 
-        ca1 = concat_obj([adata_gpair], ['A1'], 'human', 'z-score', fdr = True)
+        ca1 = concat_obj([adata_gpair], ['A1'], species, 'z-score', fdr = True)
 
         if heteronomic:
             df_tmp = adata_gpair.uns['geneInter'].copy()

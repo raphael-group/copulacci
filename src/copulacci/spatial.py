@@ -14,6 +14,7 @@ def construct_spatial_network(
     data_type: str = "visium",
     n_neighs: int = 10,
     n_rings: int = 3,
+    radius: float = 1
 ) :
     """
     Construct spatial network from spatial data.
@@ -26,7 +27,9 @@ def construct_spatial_network(
     if (data_type == "visium"):
         sq.gr.spatial_neighbors(adata, n_rings=n_rings, coord_type="grid")
     else:
-        sq.gr.spatial_neighbors(adata, n_neighs=n_neighs, coord_type="generic")
+        sq.gr.spatial_neighbors(
+            adata, radius = radius, 
+            n_neighs = n_neighs, coord_type="generic")
     
     # construct network
     G = nx.from_scipy_sparse_array(adata.obsp["spatial_connectivities"])
