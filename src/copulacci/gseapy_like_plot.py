@@ -1153,8 +1153,8 @@ def dotplot(
     # modify x and y if asked
     if show_ligrec_dir:
         df.loc[:,'ligrec_dir'] = df['ligand'] + '→' + df['receptor']
-        df.loc[:,x] = df[x].str.replace('=',' → ')
 
+    df.loc[:,x] = df[x].str.replace('=',' → ')
 
     dot = DotPlot(
         df=df,
@@ -1903,7 +1903,7 @@ def plot_raw_lr_expression(
         sns.scatterplot(x='x', y='y', hue='gene',
                              palette='Reds',s=20, data=tmp,alpha=0.7,ax= ax[i])
 
-        norm = plt.Normalize(tmp['gene'].min(), tmp['gene'].max())
+        norm = Normalize(tmp['gene'].min(), tmp['gene'].max())
         sm = plt.cm.ScalarMappable(cmap="Reds", norm=norm)
         sm.set_array([])
         
@@ -1920,3 +1920,146 @@ def plot_raw_lr_expression(
         ax[i].set_ylabel("spatial2")
     plt.tight_layout()
     plt.show()
+
+
+from matplotlib.colors import Normalize
+
+def plot_lr_interaction_boundary_activity_color(
+    df_lig_rec,
+    lig_rec_idx,
+    int_type,
+    cop_df_dict,
+    loc_df,
+    int_edges_new,
+    umi_sums,
+    data_list_dict,
+    dist_list_dict = None
+):
+    
+    idx = df_lig_rec.index.get_loc(lig_rec_idx)
+    g11, g12 = int_type.split('=')
+    if dist_list_dict is None:
+        
+        row = cop_df_dict[int_type].loc[lig_rec_idx,:]
+        coeff = row.copula_coeff
+        mu_x = row.mu_x
+        mu_y = row.mu_y
+        loglikvec =  model.log_joint_lik_perm(
+            [coeff,mu_x,mu_y],
+            umi_sums[int_type][g11],
+            umi_sums[int_type][g12],
+            data_list_dict[int_type][idx][0],
+            data_list_dict[int_type][idx][1],
+            perm=20,
+            DT=False,
+            model='copula',
+            return_sum=False
+        )
+        loglikvec = -loglikvec
+    else:
+        g11, g12 = int_name.split('=')
+        row = cop_df_dict[int_type].loc[lig_rec_idx,:]
+        rho_zero = row.rho_zero
+        rho_one = row.rho_one
+        mu_x = row.mu_x
+        mu_y = row.mu_y
+        loglikvec =  model.log_joint_lik_perm_dist(
+            [rho_zero,rho_one,mu_x,mu_y],
+            umi_sums[int_type][g11],
+            umi_sums[int_type][g12],
+            data_list_dict[int_type][idx][0],
+            data_list_dict[int_type][idx][1],
+            dist_list_dict[int_name],
+            perm=20,
+            DT=False,
+            model='copula',
+            return_sum=False
+        )
+        loglikvec = -loglikvec
+        
+    lr_pairs_ct = int_edges_new.loc[
+        int_edges_new.interaction == int_type,
+        :
+    ].copy()
+    fig, ax = plt.subplots(figsize=(6,6))
+    cmap = plt.get_cmap('Reds')
+    norm = Normalize(vmin=min(loglikvec), vmax=max(loglikvec))
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([]) 
+    # Remove the legend and add a colorbar
+    ax.scatter(loc_df['x'], loc_df['y'], c= "grey", s=0.4,alpha = 0.4)
+    #sns.scatterplot(data = int_loc_df, x = "x", y = "y", s = 8, hue='dist_from_z', ax=ax, alpha=0.8,label='start')
+    
+    for i,edge in enumerate(lr_pairs_ct[['cell1', 'cell2']].values):
+        color = cmap(norm(loglikvec[i]))
+        x1, y1 = loc_df.loc[  edge[0], 'x' ], loc_df.loc[  edge[0], 'y' ]
+        x2, y2 = loc_df.loc[  edge[1], 'x' ], loc_df.loc[  edge[1], 'y' ]
+        ax.plot([x1, x2], [y1, y2], color=color, marker='o', 
+                linestyle='-', markersize=0.5,linewidth=1)
+    cbar = plt.colorbar(sm, ax=ax, label='Loglikelihood')
+    #ax.get_legend().remove()
+    ax.set_title(lig_rec_idx + "\n" + int_type.replace('=',' → '))
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    plt.gca().invert_yaxis()
+    plt.gca().set_xticks([])
+    plt.gca().set_yticks([]);
+    plt.xlabel("spatial1")
+    plt.ylabel("spatial2")
+
+
+def plot_raw_lr_boundary_expression(
+    lig_rec_idx,
+    int_type,
+    loc_df,
+    int_edges_new,
+    count_df
+):
+    lr_pairs_ct = int_edges_new.loc[
+        int_edges_new.interaction == int_type,
+        :
+    ].copy()
+    genes_to_show = lig_rec_idx.split("_")
+    genes_to_show = [gene for gene in genes_to_show if gene in count_df.columns]
+    
+    #sns.scatterplot(data = int_loc_df, x = "x", y = "y", s = 8, hue='dist_from_z', ax=ax, alpha=0.8,label='start')
+    selected_cells = list(
+        set(lr_pairs_ct.cell1.unique()).union(
+            lr_pairs_ct.cell2.unique()   
+        )
+    )
+    fig, ax = plt.subplots(1,len(genes_to_show),
+                           figsize=(5*len(genes_to_show),5))
+    for i,gene in enumerate(genes_to_show):
+        ax[i].scatter(loc_df['x'], loc_df['y'], c= "grey", s=0.1,alpha = 0.1)
+        colors = np.array(count_df.loc[selected_cells, gene].values)
+        tmp = loc_df.loc[selected_cells,:].copy()
+        tmp.loc[:, 'gene'] = colors
+        sns.scatterplot(x='x', y='y', hue='gene',
+                             palette='Reds',s=20, data=tmp,alpha=0.7,ax= ax[i])
+
+        norm = Normalize(tmp['gene'].min(), tmp['gene'].max())
+        sm = plt.cm.ScalarMappable(cmap="Reds", norm=norm)
+        sm.set_array([])
+        
+        # Remove the legend and add a colorbar
+        ax[i].get_legend().remove()
+        
+    
+        ax[i].set_title(gene + "\n" + int_type.replace('=',' → '))
+        ax[i].figure.colorbar(sm,ax=ax[i])
+        ax[i].invert_yaxis()
+        ax[i].set_xticks([])
+        ax[i].set_yticks([])
+        ax[i].spines['top'].set_visible(False)
+        ax[i].spines['right'].set_visible(False)
+        ax[i].spines['bottom'].set_visible(False)
+        ax[i].spines['left'].set_visible(False)
+        ax[i].set_xlabel("spatial1")
+        ax[i].set_ylabel("spatial2")
+    plt.tight_layout()
+    plt.show()
+
+
