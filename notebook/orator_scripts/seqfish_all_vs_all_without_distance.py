@@ -5,6 +5,7 @@ import pandas as pd
 import scanpy as sc
 import spatialdm as sdm
 import networkx as nx
+import squidpy as sq
 
 score_pair = list(itertools.combinations(['rho_zero', 'scc','global_I'],2))
 
@@ -46,10 +47,6 @@ df_lig_rec_linear = cci.extract_lig_rec_from_sdm(adata, allow_same_lr=True)
 chosen_lr = list(set( df_lig_rec_linear.ligand.unique()).union(
     set( df_lig_rec_linear.receptor.unique() )
 ))
-
-adata.X = adata.layers['count']
-adata.raw = adata.copy()
-
 count_df = adata.raw.to_adata().to_df().loc[:,chosen_lr]
 lig_list = adata.uns['ligand'].values
 rec_list = adata.uns['receptor'].values
@@ -99,6 +96,8 @@ for gpair in data_list_dict.keys():
         heteronomic = True
     )
     if final_res_cop.shape[0] > 0:
+        if '/' in gpair:
+            gpair = gpair.replace('/','_')
         file_name = 'final_res_copula_' + gpair + '.csv'
         final_res_cop.to_csv(
             os.path.join(data_dir_90, file_name),
