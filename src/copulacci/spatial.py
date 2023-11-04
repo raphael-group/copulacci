@@ -11,9 +11,9 @@ from typing import TYPE_CHECKING, Any, Iterable, Literal, Mapping, Sequence, Uni
 # Construct spatial network
 def construct_spatial_network(
     adata: AnnData,
-    data_type: str = "visium",
+    data_type: str = "vanilla_visium",
     n_neighs: int = 10,
-    n_rings: int = 3,
+    n_rings: int = 1,
     radius: float = 1
 ) :
     """
@@ -24,7 +24,10 @@ def construct_spatial_network(
     Returns:
         AnnData object
     """
-    if (data_type == "visium"):
+    print("Constructing spatial network with {}".format(data_type), flush=True)
+    if (data_type == "vanilla_visium"):
+        sq.gr.spatial_neighbors(adata)
+    elif (data_type == "visium"):
         sq.gr.spatial_neighbors(adata, n_rings=n_rings, coord_type="grid")
     else:
         sq.gr.spatial_neighbors(
@@ -45,8 +48,11 @@ def construct_boundary(
     domanin_name: str = "celltype",
     boundary_type: str = "Internal",
     add_self_loops: bool = True,
+    force_recalculate: bool = False,
     n_rings: int = 3,
-    data_type: str = "visium"
+    n_neighs: int = 10,
+    radius: float = 1,
+    data_type: str = "vanilla_visium"
 ) -> tuple:
     """
     Construct boundary from spatial data and annotation.
@@ -68,8 +74,14 @@ def construct_boundary(
     G_was_given = True
 
     if G is None:
-        if ("spatial_network" not in adata.uns):
-            adata = construct_spatial_network(adata)
+        if (("spatial_network" not in adata.uns) or force_recalculate):
+            construct_spatial_network(
+                adata, 
+                data_type = data_type,
+                n_neighs = n_neighs,
+                n_rings = n_rings,
+                radius = radius
+            )
         G = adata.uns["spatial_network"]
         G_was_given = False
     
