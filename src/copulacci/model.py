@@ -330,6 +330,56 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
         return (term1 + term2 + term3)
 
 
+def log_joint_lik_perm_renorm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula', return_sum = True):
+    # get lam parameters for mu_1
+    coeff = params[0]
+    mu_1 = params[1]
+    mu_2 = params[2]
+    
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+    
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+    if DT:
+        for _ in range(perm-1):    
+            r_x += get_dt_cdf(x, lam1)
+            r_y += get_dt_cdf(y, lam2)
+        r_x = r_x/perm
+        r_y = r_y/perm
+        r_x = (r_x - r_x.mean()) / r_x.var()
+        r_y = (r_y - r_x.mean()) / r_y.var()
+        z = np.column_stack([r_x, r_y])
+        #z = np.column_stack([r_x/perm, r_y/perm])
+    else:
+        r_x = (r_x - r_x.mean()) / r_x.var()
+        r_y = (r_y - r_x.mean()) / r_y.var()
+        z = np.column_stack([r_x, r_y])
+    
+    # term1
+    det = 1 - coeff**2
+    if return_sum:
+        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+        term2 = (
+            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        )
+        
+        term3 = -0.5 * len(x) * np.log(det+EPSILON)
+        logsum = term1 + term2 + term3
+    
+        return -logsum
+    else:
+        term1 = -0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1])
+        term2 = (
+            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
+            np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
+        )
+        term3 = -0.5 * np.log(det+EPSILON)
+        return (term1 + term2 + term3)
+
+
 def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, 
     perm=100, DT=True, model = 'copula', return_sum = True):
     # get lam parameters for mu_1
@@ -428,8 +478,25 @@ def call_optimizer_dense(
     length_cutoff=20,
     model='copula',
     num_restarts = 50,
-    force = False
+    force = False,
+    remove_zero = False,
+    zero_pair_filter = False,
+    zz_ratio_cutoff = 0.7,
+    mu_cutoff_filter = False,
+    mu_cutoff = -8
 ):
+    if(remove_zero):
+        nz_ind = np.where((_x != 0) | (_y != 0))
+        _x = _x[nz_ind]
+        _y = _y[nz_ind]
+        _umi_sum_1 = _umi_sum_1[nz_ind]
+        _umi_sum_2 = _umi_sum_2[nz_ind]
+    
+    if(zero_pair_filter):
+        zz_percent = ((_x == 0) & (_y==0)).sum() / len(_x)
+        if zz_percent >= zz_ratio_cutoff:
+            return ([ 0, 0, 0 , 'skip_zz' ])
+
     x = _x.copy()
     y = _y.copy()
     if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
@@ -453,6 +520,11 @@ def call_optimizer_dense(
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+
+    if mu_cutoff_filter:
+        if (mu_x_start < mu_cutoff) | (mu_y_start < mu_cutoff):
+            return ([ 0, 0, 0 , 'skip_mu' ])
+
     if method_type == 'skip':
         return ([ 0, 0, 0 , 'skip' ])
     else:
@@ -486,10 +558,20 @@ def call_optimizer_dense_dist(
     length_cutoff=20,
     model='copula',
     num_restarts = 50,
-    force = False
+    force = False,
+    zero_pair_filter = False,
+    zz_ratio_cutoff = 0.7,
+    mu_cutoff_filter = False,
+    mu_cutoff = -8
 ):
+
     x = _x.copy()
     y = _y.copy()
+    if(zero_pair_filter):
+        zz_percent = ((_x == 0) & (_y==0)).sum() / len(_x)
+        if zz_percent >= zz_ratio_cutoff:
+            return ([ 0, 0, 0 , 'skip_zz' ])
+    
     if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
         
         return ([ 0, 0, 0, 0 , 'skip' ])
@@ -515,6 +597,10 @@ def call_optimizer_dense_dist(
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+    if mu_cutoff_filter:
+        if (mu_x_start < mu_cutoff) | (mu_y_start < mu_cutoff):
+            return ([ 0, 0, 0 , 'skip_mu' ])
+
     if method_type == 'skip':
         return ([ 0, 0, 0, 0 , 'skip' ])
     else:
@@ -726,7 +812,9 @@ def run_copula(
     type_run = 'full',
     heteronomic = False,
     df_lig_rec = None,
-    groups = None
+    groups = None,
+    zero_pair_filter = False,
+    zz_ratio_cutoff = 0.7
 ) -> dict:
     cop_df_dict = {}
     if groups == None:
@@ -775,7 +863,9 @@ def run_copula(
                             cutoff=cutoff,
                             length_cutoff=length_cutoff,
                             model=model,
-                            num_restarts = num_restarts
+                            num_restarts = num_restarts,
+                            zero_pair_filter = zero_pair_filter,
+                            zz_ratio_cutoff = zz_ratio_cutoff,
                          ) for (x,y) in data_list)
                 #tmp = pd.DataFrame(res,columns=[g1,g11+'_mu_x',g12+'_mu_y',g1+'_copula_method'])
                 tmp = pd.DataFrame(res,columns=[
@@ -1861,7 +1951,9 @@ def run_sdm(
         print(adata_gpair.shape)
         adata_gpair.uns['single_cell'] = False
         adj = nx.adjacency_matrix(G)
-        adj = normalize(adj, norm='l1', axis=1)
+        # TODO Not sure if we should normalize
+        # to match the the graph from copulacci
+        # adj = normalize(adj, norm='l1', axis=1)
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
 
