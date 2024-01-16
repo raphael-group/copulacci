@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy import stats
-from scipy import linalg
+from scipy import stats, linalg
 import model
 from joblib import Parallel, delayed
 from sklearn.metrics.pairwise import euclidean_distances

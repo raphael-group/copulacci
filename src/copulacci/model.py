@@ -330,56 +330,6 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
         return (term1 + term2 + term3)
 
 
-def log_joint_lik_perm_renorm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, model = 'copula', return_sum = True):
-    # get lam parameters for mu_1
-    coeff = params[0]
-    mu_1 = params[1]
-    mu_2 = params[2]
-    
-    lam1 = umi_sum_1 * np.exp(mu_1)
-    lam2 = umi_sum_2 * np.exp(mu_2)
-    
-    # get z
-    r_x = get_dt_cdf(x, lam1, DT=DT)
-    r_y = get_dt_cdf(y, lam2, DT=DT)
-    if DT:
-        for _ in range(perm-1):    
-            r_x += get_dt_cdf(x, lam1)
-            r_y += get_dt_cdf(y, lam2)
-        r_x = r_x/perm
-        r_y = r_y/perm
-        r_x = (r_x - r_x.mean()) / r_x.var()
-        r_y = (r_y - r_x.mean()) / r_y.var()
-        z = np.column_stack([r_x, r_y])
-        #z = np.column_stack([r_x/perm, r_y/perm])
-    else:
-        r_x = (r_x - r_x.mean()) / r_x.var()
-        r_y = (r_y - r_x.mean()) / r_y.var()
-        z = np.column_stack([r_x, r_y])
-    
-    # term1
-    det = 1 - coeff**2
-    if return_sum:
-        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
-        term2 = (
-            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
-            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
-        )
-        
-        term3 = -0.5 * len(x) * np.log(det+EPSILON)
-        logsum = term1 + term2 + term3
-    
-        return -logsum
-    else:
-        term1 = -0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1])
-        term2 = (
-            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
-            np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
-        )
-        term3 = -0.5 * np.log(det+EPSILON)
-        return (term1 + term2 + term3)
-
-
 def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, 
     perm=100, DT=True, model = 'copula', return_sum = True):
     # get lam parameters for mu_1
