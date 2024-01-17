@@ -1,6 +1,6 @@
 import numpy as np
 import pandas as pd
-from scipy import stats, linalg
+from scipy import stats
 import model
 from joblib import Parallel, delayed
 from sklearn.metrics.pairwise import euclidean_distances
@@ -23,7 +23,7 @@ def create_param_grid(
     param_grids = np.meshgrid(*param_values, indexing='ij')
     grid_points = np.column_stack([grid.ravel() for grid in param_grids])
     grid_points_df = pd.DataFrame(
-        grid_points, 
+        grid_points,
         columns=['sparse_frac', 'mu_x', 'mu_y' ,'rho']
     )
     grid_points_df.loc[:, 'ind'] = np.array(range(grid_points_df.shape[0])).astype('int')
@@ -49,7 +49,7 @@ def create_param_grid_spatial(
     param_grids = np.meshgrid(*param_values, indexing='ij')
     grid_points = np.column_stack([grid.ravel() for grid in param_grids])
     grid_points_df = pd.DataFrame(
-        grid_points, 
+        grid_points,
         columns=['sparse_frac', 'mu_x', 'mu_y' ,'rho_zero', 'rho_one']
     )
     grid_points_df.loc[:, 'ind'] = np.array(range(grid_points_df.shape[0])).astype('int')
@@ -60,24 +60,24 @@ def sim_non_spatial(
     n_array,
     grid_points_df
 ):
-    
-    
+
+
     pseudo_count = pd.DataFrame()
 
     for row in tqdm.tqdm(grid_points_df.iterrows()):
         sparse_frac, mu_x, mu_y, rho, global_idx = row[1]
         _n_array = (n_array * sparse_frac).astype('int')
-        
-        
+
+
         sample = model.sample_from_copula(
             _n_array,
-            mu_x, 
-            mu_y, 
+            mu_x,
+            mu_y,
             rho
         )
         sample.columns = ['L'+str(int(global_idx)), 'R'+str(int(global_idx))]
         pseudo_count = pd.concat([pseudo_count, sample.copy()], axis = 1)
-        
+
     return pseudo_count
 
 
@@ -86,7 +86,7 @@ def create_spatial_grid(nop=100):
     N = nop ** 2
 
     # Generate positions
-    pos = np.array(np.meshgrid(np.arange(1, int(np.sqrt(N)) + 1), 
+    pos = np.array(np.meshgrid(np.arange(1, int(np.sqrt(N)) + 1),
                             np.arange(1, int(np.sqrt(N)) + 1))).T.reshape(-1, 2)
     pos = np.concatenate((pos, pos[::-1]), axis=0)
     pos = np.unique(pos, axis=0)
@@ -116,20 +116,20 @@ def sim_simple_spatial_distance(pos_w,nop):
         gap = gaps[i]
 
         sim_edge_list += [(i,j,euclidean_distances(
-            sim_coords[np.newaxis, i, :], 
+            sim_coords[np.newaxis, i, :],
             sim_coords[np.newaxis, j, :]
         )[0][0],gap) for (i,j) in zip(list(range(start_x , start_x + nop)), list(range(start_x + gap * nop, start_x + (gap+1) * nop)) ) ]
 
-    sim_edge_list_df = pd.DataFrame(sim_edge_list, 
+    sim_edge_list_df = pd.DataFrame(sim_edge_list,
                                     columns = [
-                                        'source', 'target', 
+                                        'source', 'target',
                                         'distance', 'gap'])
     return sim_edge_list_df
 
 
 def simulate_simple_spatial(
         n_array_sum,
-        grid_points_df, 
+        grid_points_df,
         sim_edge_list_df,
         n_jobs = 20
     ):
@@ -138,11 +138,11 @@ def simulate_simple_spatial(
         sparse_frac, mu_x, mu_y, rho_zero, rho_one, global_idx = args
         _n_array = (n_array_sum * sparse_frac).astype('int')
         coeff_list = rho_zero * np.exp(-1 * sim_edge_list_df.distance * rho_one)
-        
+
         sample = model.sample_from_copula_dist(
             _n_array,
-            mu_x, 
-            mu_y, 
+            mu_x,
+            mu_y,
             coeff_list
         )
         sample.columns = ['L'+str(int(global_idx)), 'R'+str(int(global_idx))]
@@ -157,7 +157,7 @@ def simulate_simple_spatial(
 
 def simulate_simple_grad_spatial(
         n_array_sum,
-        grid_points_df, 
+        grid_points_df,
         sim_edge_list_df,
         n_jobs = 20
     ):
@@ -165,11 +165,11 @@ def simulate_simple_grad_spatial(
         sparse_frac, mu_x, mu_y, rho_zero, rho_one, global_idx = args
         _n_array = (n_array_sum * sparse_frac).astype('int')
         coeff_list = rho_zero * np.exp(-1 * sim_edge_list_df.distance * rho_one)
-        
+
         sample = model.sample_from_copula_grad(
             _n_array,
-            mu_x, 
-            mu_y, 
+            mu_x,
+            mu_y,
             coeff_list,
             sim_edge_list_df.gap.values,
             t = 30
@@ -193,11 +193,11 @@ def prepare_df(
     n_array_sum
 ):
 
-    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0) 
+    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0)
     count_df_norm_log = np.log( count_df_norm + 1 )
-    
+
     data_list_norm = []
-    
+
     for row in tqdm.tqdm(grid_points_df.iterrows()):
         sparse_frac, mu_x, mu_y, rho, i = row[1]
         _n_array = (n_array_sum * sparse_frac).astype('int')
@@ -208,9 +208,9 @@ def prepare_df(
             )
         ]
         i += 1
-    
+
     data_list_log = []
-    
+
     for row in tqdm.tqdm(grid_points_df.iterrows()):
         sparse_frac, mu_x, mu_y, rho, i = row[1]
         _n_array = (n_array_sum * sparse_frac).astype('int')
@@ -220,8 +220,8 @@ def prepare_df(
                 count_df_norm_log.loc[:, 'R'+str(int(i))]
             )
         ]
-    
-    
+
+
     spr = []
     spr2 = []
     spr3 = []
@@ -245,17 +245,17 @@ def prepare_df(
         #spr2 += [stats.spearmanr(( x[inds] / _n_array[inds] ), ( y[inds] / _n_array[inds] )).correlation]
         spr4 += [stats.spearmanr(x, y).correlation]
 
-    
+
     opt_res_df = pd.DataFrame(opt_res, columns=['pred_corr', 'pred_mu_x','pred_mu_y','method'])
     zero_ratio = (pseudo_count == 0).mean()
     opt_res_df.loc[:,'zero_ratio'] = [(zero_ratio.iloc[i] + zero_ratio.iloc[i + 1]) / 2 for i in range(0, len(zero_ratio) - 1, 2)]
-    
-    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25', 
+
+    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25',
                                                                             '25_50',
                                                                             '50_75',
                                                                              '75_100'
                                                                             ])
-    
+
     opt_res_df = opt_res_df[['pred_corr', 'pred_mu_x','pred_mu_y','method','zr_cat']].copy()
     opt_res_df = pd.concat([grid_points_df, opt_res_df], axis = 1)
     opt_res_df['spearman'] = spr
@@ -263,23 +263,23 @@ def prepare_df(
     opt_res_df['spearman_log_norm'] = spr4
     opt_res_df['pearson_norm'] = spr3
     opt_res_df = opt_res_df.loc[opt_res_df.method == 'copula'].copy()
-    opt_res_df = opt_res_df.drop('method', axis=1) 
-    
+    opt_res_df = opt_res_df.drop('method', axis=1)
+
     opt_res_df['copula_diff'] = opt_res_df.rho - opt_res_df.pred_corr
     opt_res_df['spearman_diff'] = opt_res_df.rho - opt_res_df.spearman
     opt_res_df['pearson_diff'] = opt_res_df.rho - opt_res_df.pearson
     opt_res_df['spearman_log_norm_diff'] = opt_res_df.rho - opt_res_df.spearman_log_norm
     opt_res_df['pearson_norm_diff'] = opt_res_df.rho - opt_res_df.pearson_norm
     #opt_res_df= opt_res_df.fillna(0)
-    
-    
-    
+
+
+
     opt_res_df.loc[:,'orig_index'] = opt_res_df.index
-    res_df_melted = pd.melt(opt_res_df, 
-            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho','orig_index'], 
+    res_df_melted = pd.melt(opt_res_df,
+            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho','orig_index'],
             value_vars=['copula_diff', 'spearman_diff','pearson_diff','spearman_log_norm_diff','pearson_norm_diff'],
             var_name = 'method', value_name = 'difference')
-    
+
     opt_res_df['method_diff'] = abs(opt_res_df.copula_diff) - abs(opt_res_df.spearman_diff)
 
     return (res_df_melted, opt_res_df)
@@ -293,9 +293,9 @@ def prepare_df_dist(
         n_array_sum
     ):
 
-    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0) 
+    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0)
     count_df_norm_log = np.log( count_df_norm + 1 )
-    
+
     data_list_norm = []
 
     for row in tqdm.tqdm(grid_points_df.iterrows()):
@@ -320,7 +320,7 @@ def prepare_df_dist(
                 count_df_norm_log.loc[:, 'R'+str(int(i))]
             )
         ]
-     
+
 
     spr = []
     spr2 = []
@@ -345,47 +345,47 @@ def prepare_df_dist(
         #spr2 += [stats.spearmanr(( x[inds] / _n_array[inds] ), ( y[inds] / _n_array[inds] )).correlation]
         spr4 += [stats.spearmanr(x, y).correlation]
 
-    
+
     opt_res_df = pd.DataFrame(opt_res, columns=['pred_corr_zero', 'pred_corr_one' ,'pred_mu_x','pred_mu_y','method'])
 
     zero_ratio = (pseudo_count == 0).mean()
     opt_res_df.loc[:,'zero_ratio'] = [(zero_ratio.iloc[i] + zero_ratio.iloc[i + 1]) / 2 for i in range(0, len(zero_ratio) - 1, 2)]
-    
-    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25', 
+
+    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25',
                                                                             '25_50',
                                                                             '50_75',
                                                                              '75_100'
                                                                             ])
 
     opt_res_df = opt_res_df[['pred_corr_zero', 'pred_corr_one', 'pred_mu_x','pred_mu_y','method','zr_cat']].copy()
-    
+
     opt_res_df = pd.concat([grid_points_df, opt_res_df], axis = 1)
     opt_res_df['spearman'] = spr
     opt_res_df['pearson'] = spr2
     opt_res_df['spearman_log_norm'] = spr4
     opt_res_df['pearson_norm'] = spr3
     opt_res_df = opt_res_df.loc[opt_res_df.method == 'copula'].copy()
-    opt_res_df = opt_res_df.drop('method', axis=1) 
+    opt_res_df = opt_res_df.drop('method', axis=1)
 
-    
+
     opt_res_df['copula_diff'] = opt_res_df.rho_zero - opt_res_df.pred_corr_zero
     opt_res_df['copula_one_diff'] = opt_res_df.rho_zero - opt_res_df.pred_corr_one
     opt_res_df['spearman_diff'] = opt_res_df.rho_zero - opt_res_df.spearman
     opt_res_df['pearson_diff'] = opt_res_df.rho_zero - opt_res_df.pearson
     opt_res_df['spearman_log_norm_diff'] = opt_res_df.rho_zero - opt_res_df.spearman_log_norm
-    opt_res_df['pearson_norm_diff'] = opt_res_df.rho_zero - opt_res_df.pearson_norm 
+    opt_res_df['pearson_norm_diff'] = opt_res_df.rho_zero - opt_res_df.pearson_norm
     #opt_res_df= opt_res_df.fillna(0)
-    
-    
+
+
     opt_res_df.loc[:,'orig_index'] = opt_res_df.index
-    
-    res_df_melted = pd.melt(opt_res_df, 
-            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho_zero', 'rho_one','orig_index'], 
+
+    res_df_melted = pd.melt(opt_res_df,
+            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho_zero', 'rho_one','orig_index'],
             value_vars=['copula_diff', 'spearman_diff','pearson_diff','spearman_log_norm_diff','pearson_norm_diff'],
             var_name = 'method', value_name = 'difference')
 
-    
-    
+
+
     opt_res_df['method_diff'] = abs(opt_res_df.copula_diff) - abs(opt_res_df.spearman_diff)
 
     return (res_df_melted, opt_res_df)
@@ -399,9 +399,9 @@ def prepare_df_grad(
         n_array_sum
     ):
 
-    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0) 
+    count_df_norm = pseudo_count.div(pseudo_count.sum(1), axis = 0)
     count_df_norm_log = np.log( count_df_norm + 1 )
-    
+
     data_list_norm = []
 
     for row in tqdm.tqdm(grid_points_df.iterrows()):
@@ -426,7 +426,7 @@ def prepare_df_grad(
                 count_df_norm_log.loc[:, 'R'+str(int(i))]
             )
         ]
-     
+
 
     spr = []
     spr2 = []
@@ -451,48 +451,48 @@ def prepare_df_grad(
         #spr2 += [stats.spearmanr(( x[inds] / _n_array[inds] ), ( y[inds] / _n_array[inds] )).correlation]
         spr4 += [stats.spearmanr(x, y).correlation]
 
-    
+
     opt_res_df = pd.DataFrame(opt_res, columns=['pred_corr_zero', 'pred_corr_one' ,'pred_mu_x','pred_mu_y', 't_param', 'method'])
 
     zero_ratio = (pseudo_count == 0).mean()
     opt_res_df.loc[:,'zero_ratio'] = [(zero_ratio.iloc[i] + zero_ratio.iloc[i + 1]) / 2 for i in range(0, len(zero_ratio) - 1, 2)]
-    
-    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25', 
+
+    opt_res_df.loc[:,'zr_cat'] = pd.cut(opt_res_df.zero_ratio, bins=4, labels = ['below_25',
                                                                             '25_50',
                                                                             '50_75',
                                                                              '75_100'
                                                                             ])
 
     opt_res_df = opt_res_df[['pred_corr_zero', 'pred_corr_one', 'pred_mu_x','pred_mu_y','method','zr_cat']].copy()
-    
+
     opt_res_df = pd.concat([grid_points_df, opt_res_df], axis = 1)
     opt_res_df['spearman'] = spr
     opt_res_df['pearson'] = spr2
     opt_res_df['spearman_log_norm'] = spr4
     opt_res_df['pearson_norm'] = spr3
     opt_res_df = opt_res_df.loc[opt_res_df.method == 'copula'].copy()
-    opt_res_df = opt_res_df.drop('method', axis=1) 
+    opt_res_df = opt_res_df.drop('method', axis=1)
 
-    
+
     opt_res_df['copula_diff'] = opt_res_df.rho_zero - opt_res_df.pred_corr_zero
     opt_res_df['copula_one_diff'] = opt_res_df.rho_zero - opt_res_df.pred_corr_one
     opt_res_df['spearman_diff'] = opt_res_df.rho_zero - opt_res_df.spearman
     opt_res_df['pearson_diff'] = opt_res_df.rho_zero - opt_res_df.pearson
     opt_res_df['spearman_log_norm_diff'] = opt_res_df.rho_zero - opt_res_df.spearman_log_norm
     opt_res_df['pearson_norm_diff'] = opt_res_df.rho_zero - opt_res_df.pearson_norm
-    
+
     #opt_res_df= opt_res_df.fillna(0)
-    
-    
+
+
     opt_res_df.loc[:,'orig_index'] = opt_res_df.index
-    
-    res_df_melted = pd.melt(opt_res_df, 
-            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho_zero', 'rho_one','orig_index'], 
+
+    res_df_melted = pd.melt(opt_res_df,
+            id_vars = ['mu_x','mu_y', 'zr_cat', 'sparse_frac','rho_zero', 'rho_one','orig_index'],
             value_vars=['copula_diff', 'spearman_diff','pearson_diff','spearman_log_norm_diff','pearson_norm_diff'],
             var_name = 'method', value_name = 'difference')
 
-    
-    
+
+
     opt_res_df['method_diff'] = abs(opt_res_df.copula_diff) - abs(opt_res_df.spearman_diff)
 
     return (res_df_melted, opt_res_df)
@@ -506,16 +506,16 @@ def show_pattern(pos_w, sim_edge_list_df, pseudo_count, i):
     tmp_end = pos_w.iloc[sim_edge_list_df.target,:].copy()
     tmp_end.loc[:,'gene'] = pseudo_count.loc[:, 'R' + str(i)].values
     tmp_dist = pd.concat([tmp_source, tmp_end])
-    
+
     fig, ax = plt.subplots(figsize=(7, 6))
     ax.scatter(pos_w.x, pos_w.y,s=0.01,alpha=1,color='grey');
     tmp_dist.loc[:, 'gene_log'] = np.log( tmp_dist.gene + 1 )
     sns.scatterplot(data= tmp_dist, x="x", y="y", hue="gene", palette="Reds",  s=4, linewidth=0, alpha=1, ax=ax)
-    
+
     norm = plt.Normalize(tmp_dist['gene'].min(), tmp_dist['gene'].max())
     sm = plt.cm.ScalarMappable(cmap="Reds", norm=norm)
     sm.set_array([])
-    
+
     # Remove the legend and add a colorbar
     ax.get_legend().remove()
     cbar = ax.figure.colorbar(sm)

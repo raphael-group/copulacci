@@ -30,7 +30,7 @@ def get_dt_cdf(x, lam, DT=True):
         lam: float
             The lambda parameter of the Poisson distribution
         dt: bool
-            Whether to use the distributional transformation with 
+            Whether to use the distributional transformation with
             uniform random variable or not. If False, the distributional
             transformation is used with the average of the two cdfs.
     '''
@@ -57,7 +57,7 @@ def sample_from_copula(
         **kwargs
 ):
     '''
-        This function samples from a copula distribution to simulate 
+        This function samples from a copula distribution to simulate
         bivariate count datasets.
         Parameters:
         -----------
@@ -71,7 +71,7 @@ def sample_from_copula(
             'coeff' - the correlation coefficient if a float
                       if a list then assumed to contain distance
             'dist' - The distance vector between two count values
-            while generating spatial expression. 
+            while generating spatial expression.
             'l' - The decay parameter for the exponential decay
             't' - The coefficient of the exponential decay
             The last two attributes are used to simulate spatial
@@ -148,12 +148,12 @@ def log_joint_lik(
             The first variable
         y: array-like
             The second variable
-        umi_sum_1: array-like 
+        umi_sum_1: array-like
             The UMI sums of the first variable
         umi_sum_2: array-like
             The UMI sums of the second variable
         copula_params: namedtuple of CopulaParams
-            'perm' - Number of permutations 
+            'perm' - Number of permutations
             'DT' - Whether to use the distributional transformation
             with uniform distribution or not
             'dist_list' - The list of distances between two spots
@@ -242,7 +242,7 @@ def call_optimizer(
         opt_params,
         **kwargs
 ):
-    '''
+    """
         This function calls the likelihood function and find the parameters
         for maxumum likelihood estimation.
         Parameters:
@@ -267,7 +267,7 @@ def call_optimizer(
             'mu_cutoff' - The minimum GLM mean of the two variables
             'force_opt' - Whether to force optimization or not if set to True
                 then optimization is done even if the above cutoffs are not met
-    '''
+    """
     skip_opt = False
     opt_status = 'copula'
     copula_mode = copula_params.copula_mode
@@ -275,12 +275,19 @@ def call_optimizer(
     use_zero_cutoff = kwargs.get('use_zero_cutoff', False)
     zero_cutoff = kwargs.get('zero_cutoff', 0.8)
     use_length_cutoff = kwargs.get('use_length_cutoff', False)
-    length_cutoff = kwargs.get('length_cutoff', 100)
+    length_cutoff = kwargs.get('length_cutoff', 50)
     use_zero_pair_cutoff = kwargs.get('use_zero_pair_cutoff', False)
     zero_pair_cutoff = kwargs.get('zero_pair_cutoff', 0.6)
     use_mu_cutoff = kwargs.get('use_mu_cutoff', False)
     mu_cutoff = kwargs.get('mu_cutoff', -8)
     force_opt = kwargs.get('force_opt', False)
+
+    # If either of the two variables is empty return with status empty
+    if (len(x) == 0) | (len(y) == 0):
+        if copula_mode == 'vanilla':
+            return [0, 0, 0, 'empty']
+        else:
+            return [0, 0, 0, 0, 'empty']
 
     if force_opt is False:
         if use_zero_cutoff:
@@ -308,8 +315,7 @@ def call_optimizer(
     if skip_opt is True:
         if copula_mode == 'vanilla':
             return [0, mu_x_start, mu_y_start, opt_status]
-        else:
-            return [0, 0, mu_x_start, mu_y_start, 0, 0, opt_status]
+        return [0, 0, mu_x_start, mu_y_start, opt_status]
 
     # Get optimization parameters
     method = opt_params.method
@@ -343,7 +349,29 @@ def call_optimizer(
             best_result = min(results, key=lambda x: x['fun'])
             return list(best_result['x']) + [opt_status]
         else:
-            raise ValueError('Not implemented yet')
+            rho_zero_start = np.random.uniform(-0.99, 0.99, num_starts)
+            rho_one_start = np.random.uniform(0.0, 10.0, num_starts)
+            mu_1_start = np.random.uniform(mu_x_start - 5, 0, num_starts)
+            mu_2_start = np.random.uniform(mu_y_start - 5, 0, num_starts)
+            start_params = np.column_stack([rho_zero_start, rho_one_start, mu_1_start, mu_2_start])
+            results = []
+            for i in range(num_starts):
+                res = minimize(
+                    log_joint_lik,
+                    x0 = start_params[i],
+                    method=method,
+                    bounds=[
+                        (-0.99, 0.99),
+                        (0.0, 10.0),
+                        (mu_x_start-5, 0),
+                        (mu_y_start-5, 0)
+                    ],
+                    args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
+                    tol=tol
+                )
+                results += [res.copy()]
+            best_result = min(results, key=lambda x: x['fun'])
+            return list(best_result['x']) + [opt_status]
     else:
         if copula_mode == 'vanilla':
             start_params = np.array([0.0, mu_x_start, mu_y_start])
@@ -364,11 +392,11 @@ def call_optimizer(
                 method=method,
                 bounds=[
                     (-0.99, 0.99),
-                    (0.0, 0.1),
+                    (0.0, 10.0),
                     (mu_x_start-5, 0),
-                    (mu_y_start - 5, 0)
+                    (mu_y_start-5, 0)
                 ],
-                args=(copula_params,),
+                args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                 tol=tol
             )
             return list(res['x']) + [opt_status]
@@ -382,13 +410,13 @@ def run_copula(
     n_jobs = 2,
     verbose = 1,
     groups = None,
-    df_lig_rec = None,
+    df_lig_rec_index = None,
     heteronomic = False,
     copula_params = CopulaParams(),
     opt_params = OptParams(),
     **kwargs
 ):
-    '''
+    """
         This function wraps the copula model and runs it on the data.
         Parameters:
         -----------
@@ -396,9 +424,10 @@ def run_copula(
             The dictionary of dataframes containing the count data
             for each group So a dictionary of lists
         umi_sums: dict
-            The dictionary of UMI sums for each group divided 
+            The dictionary of UMI sums for each group divided
             into nested dictionaries
-    '''
+        TODO - Add more documentation
+    """
     cop_df_dict = {}
     if groups is None:
         groups = list(data_list_dict.keys())
@@ -425,6 +454,7 @@ def run_copula(
                 **kwargs
             ) for x, y in data_list
         )
+        print(res[10])
         if copula_params.copula_mode == 'vanilla':
             cop_df_dict[g1] = pd.DataFrame(res, columns=[
                     'copula_coeff',
@@ -441,9 +471,9 @@ def run_copula(
                     'copula_method'
             ])
         if heteronomic:
-            if df_lig_rec is None:
+            if df_lig_rec_index is None:
                 raise ValueError('df_lig_rec is None')
-            cop_df_dict[g1].index = df_lig_rec.index
+            cop_df_dict[g1].index = df_lig_rec_index
         else:
             if lig_rec_pair_list is None:
                 raise ValueError('lig_rec_pair_list is None')
@@ -452,4 +482,3 @@ def run_copula(
             cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]
 
     return cop_df_dict
-        
