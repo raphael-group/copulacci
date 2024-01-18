@@ -346,11 +346,13 @@ def call_optimizer(
                     tol=tol
                 )
                 results += [res.copy()]
+            # Take the converged result with the lowest log likelihood
+            results = [res for res in results if res['success'] is True]
             best_result = min(results, key=lambda x: x['fun'])
             return list(best_result['x']) + [opt_status]
         else:
             rho_zero_start = np.random.uniform(-0.99, 0.99, num_starts)
-            rho_one_start = np.random.uniform(0.0, 10.0, num_starts)
+            rho_one_start = np.random.uniform(0.0, 1.0, num_starts)
             mu_1_start = np.random.uniform(mu_x_start - 5, 0, num_starts)
             mu_2_start = np.random.uniform(mu_y_start - 5, 0, num_starts)
             start_params = np.column_stack([rho_zero_start, rho_one_start, mu_1_start, mu_2_start])
@@ -370,6 +372,8 @@ def call_optimizer(
                     tol=tol
                 )
                 results += [res.copy()]
+            # Take the converged result with the lowest log likelihood
+            results = [res for res in results if res['success'] is True]
             best_result = min(results, key=lambda x: x['fun'])
             return list(best_result['x']) + [opt_status]
     else:

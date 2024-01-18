@@ -58,6 +58,7 @@ def construct_boundary(
     domain_name: str = "celltype",
     add_self_loops: bool = True,
     force_recalculate: bool = False,
+    distance_aware: bool = False,
     spatial_params: SpatialParams = SpatialParams()
 ) -> tuple:
     """
@@ -90,7 +91,7 @@ def construct_boundary(
                 adata,
                 spatial_params
             )
-            G = adata.uns["spatial_network"]
+        G = adata.uns["spatial_network"]
         # Name the network
         node_dict = {}
         for node in G.nodes():
@@ -107,6 +108,8 @@ def construct_boundary(
 
     boundary_cell_type = []
     for cell1, cell2, data in G.edges(data=True):
+        if distance_aware and (cell1 != cell2) and data['weight'] == 0:
+            continue
         boundary_cell_type += [[
             cell1,
             cell2,
