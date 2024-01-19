@@ -6,6 +6,9 @@ import pandas as pd
 from scipy import stats, linalg
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
+import networkx as nx
+import time
+import spatial
 
 
 EPSILON = 1.1920929e-07
@@ -15,6 +18,12 @@ CopulaParams = namedtuple('CopulaParams', ['perm', 'DT', 'dist_list',
 CopulaParams.__new__.__defaults__ = (1, False, None, 'vanilla', True, 0.01)
 OptParams = namedtuple('OptParams', ['method', 'tol', 'maxiter', 'num_starts'])
 OptParams.__new__.__defaults__ = ('Nelder-Mead', 1e-6, 1e+6, 1)
+
+SpatialParams = namedtuple('SpatialParams', ['data_type',  'coord_type', 'n_neighs', 'n_rings',
+                                             'radius', 'distance_aware', 'deluanay']
+            )
+SpatialParams.__new__.__defaults__ = ('visium', 'grid', 6, 1, None, False, False)
+
 
 
 def get_dt_cdf(x, lam, DT=True):
@@ -275,7 +284,7 @@ def call_optimizer(
     use_zero_cutoff = kwargs.get('use_zero_cutoff', False)
     zero_cutoff = kwargs.get('zero_cutoff', 0.8)
     use_length_cutoff = kwargs.get('use_length_cutoff', False)
-    length_cutoff = kwargs.get('length_cutoff', 50)
+    length_cutoff = kwargs.get('length_cutoff', 20)
     use_zero_pair_cutoff = kwargs.get('use_zero_pair_cutoff', False)
     zero_pair_cutoff = kwargs.get('zero_pair_cutoff', 0.6)
     use_mu_cutoff = kwargs.get('use_mu_cutoff', False)
@@ -486,3 +495,184 @@ def run_copula(
             cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]
 
     return cop_df_dict
+
+
+def permutation_pval(
+    data_list_dict,
+    umi_sums,
+    lig_rec_pair_list,
+    lig_rec_pair_index,
+    n_jobs = 2,
+    verbose = 1,
+    groups = None,
+    n = 1000,
+    copula_params = CopulaParams(),
+    opt_params = OptParams()
+):
+    """
+        This function adds p-values to the copula coefficients
+        Parameters:
+        -----------
+        data_list_dict: dict
+            The dictionary of dataframes containing the count data
+            for each group So a dictionary of lists
+        umi_sums: dict
+        lig_rec_pair_list: list
+            The permutation will be run for this list of ligand receptor pairs
+        lig_rec_pair_index: list
+            This has the list of ligand receptor pairs, this is relevant when
+            we have short vs long range itneractions
+        n_jobs: int
+            The number of jobs to run in parallel
+        verbose: int
+            The verbosity level
+        groups: list
+            The list of groups to run the permutation test
+        n: int (default 1000)
+            The number of permutations
+        copula_params: namedtuple of CopulaParams
+        opt_params: namedtuple of OptParams
+        TODO - Add more documentation
+    """
+    if groups is None:
+        groups = data_list_dict.keys()
+    import time
+    # Assume that the data has the exact size of ligand receptor pairs
+    bg_coeffs_dict = {}
+    for gpair in groups:
+        print(gpair)
+        data_list = data_list_dict[gpair]
+        umi_sums_1 = umi_sums[gpair][gpair.split('=')[0]]
+        umi_sums_2 = umi_sums[gpair][gpair.split('=')[1]]
+        bg_group_dict = {}
+        do_for_all = False
+        if len(lig_rec_pair_list) == len(lig_rec_pair_index):
+            do_for_all = True
+        if do_for_all:
+            raise ValueError('Not implemented')
+        else:
+            # loop over each ligand receptor
+            for lig_rec_pair in lig_rec_pair_list:
+                ind_array = np.array(lig_rec_pair_index)
+                if np.where(ind_array == lig_rec_pair)[0].shape[0] == 0:
+                    continue
+                index = np.where(ind_array == lig_rec_pair)[0][0]
+                x, y = data_list[index]
+                # Get permuted index
+                perm_data_list = []
+                for _ in range(n):
+                    perm_index = np.random.permutation(len(x))
+                    perm_data_list += [(x[perm_index], umi_sums_1[perm_index])]
+                perm_copula_results = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                    delayed(call_optimizer)(
+                        x,
+                        y,
+                        us1,
+                        umi_sums_2,
+                        copula_params,
+                        opt_params
+                    ) for x, us1 in perm_data_list
+                )
+                copula_coeffs = np.array([res[0] for res in perm_copula_results])
+                bg_group_dict[lig_rec_pair] = copula_coeffs
+        bg_coeffs_dict[gpair] = bg_group_dict.copy()
+    return bg_coeffs_dict
+
+
+def graph_permutation_pval(
+    count_df,
+    int_edges,
+    lig_rec_index,
+    lig_df,
+    rec_df,
+    groups,
+    heteromeric = True,
+    n = 1000,
+    summarization='sum',
+    n_jobs = 2,
+    verbose = 1,
+    copula_params = CopulaParams(),
+    opt_params = OptParams()
+):
+    """
+        This function adds p-values to the copula coefficients
+        Parameters:
+        -----------
+        data_list_dict: dict
+            The dictionary of dataframes containing the count data
+            for each group So a dictionary of lists
+        umi_sums: dict
+        TODO - Add more documentation
+    """
+    # Assume that the data has the exact size of ligand receptor pairs
+    bg_coeffs_dict = {}
+    start_time = time.time()
+    for gpair in groups:
+        # Create a the subgraph
+        # for this interaction
+        G = nx.Graph()
+        G.add_weighted_edges_from(
+            int_edges.loc[int_edges.interaction == gpair,
+                ['cell1', 'cell2', 'distance']
+            ].to_records(index=False)
+        )
+        connection_df_list = []
+        umi_sum_1_list = []
+        umi_sum_2_list = []
+        print(f"Constructing {n} random graphs with {len(G.nodes())} nodes and {len(G.edges())} edges",
+              flush=True)
+        for _ in range(n):
+            nodes = list(G.nodes())
+            np.random.shuffle(nodes)
+            node_mapping = dict(zip(G.nodes(), nodes))
+            G_perm = nx.relabel_nodes(G, node_mapping)
+            # Make a datalist for each ligand receptor pair
+            connection_df = pd.DataFrame(
+                 [(u, v, d['weight']) for u, v, d in G_perm.edges(data=True)],
+                 columns = ['cell1', 'cell2', 'distance']
+            )
+            connection_df_list += [connection_df.copy()]
+            umi_sum_1_list += [count_df.loc[connection_df.cell1, :].sum(1).values]
+            umi_sum_2_list += [count_df.loc[connection_df.cell2, :].sum(1).values]
+        print(f"Time taken to construct {n} random graphs: {time.time() - start_time:.2f} seconds",
+              flush=True)
+        # Now create data_list with for each ligand receptor pair
+        bg_group_dict = {}
+        for index in lig_rec_index:
+            lig = lig_df.loc[index].values.tolist()
+            rec = rec_df.loc[index].values.tolist()
+            data_lig_rec = []
+            # record the permutations
+            for i in range(n):
+                connection_df = connection_df_list[i]
+                if heteromeric:
+                    data_lig_rec += [
+                        spatial.heteromeric_subunit_summarization(
+                            count_df,
+                            connection_df,
+                            lig,
+                            rec,
+                            summarization=summarization
+                        )
+                    ]
+                else:
+                    lig, rec = index.split('_')
+                    data_lig_rec += [(
+                        count_df.loc[connection_df.cell1, lig].values,
+                        count_df.loc[connection_df.cell2, rec].values
+                    )]
+            # Now estimate copula coeff
+            perm_copula_results = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                delayed(call_optimizer)(
+                    data_lig_rec[i][0],
+                    data_lig_rec[i][1],
+                    umi_sum_1_list[i],
+                    umi_sum_2_list[i],
+                    copula_params,
+                    opt_params
+                ) for i in range(n)
+            )
+            copula_coeffs = np.array([res[0] for res in perm_copula_results])
+            bg_group_dict[index] = copula_coeffs.copy()
+        bg_coeffs_dict[gpair] = bg_group_dict.copy()
+    return bg_coeffs_dict

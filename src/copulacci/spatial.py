@@ -262,7 +262,8 @@ def prepare_data_list_from_spatial_network(
     lig_df = None,
     rec_df = None,
     summarization = "min",
-    separate_lig_rec_type = False
+    separate_lig_rec_type = False,
+    data_type = 'visium'
 ):
     """
     Prepare data list from spatial network.
@@ -330,7 +331,7 @@ def prepare_data_list_from_spatial_network(
                 lig = lig_df.loc[index].values.tolist()
                 rec = rec_df.loc[index].values.tolist()
                 if separate_lig_rec_type:
-                    if row.annotation == 'Cell-Cell Contact':
+                    if row.annotation == 'Cell-Cell Contact' and data_type == 'visium':
                         data_list_selfloop += [heteromeric_subunit_summarization(count_df, int_edges_selfloop_g1,
                                                                         lig, rec, summarization)
                                 ]
