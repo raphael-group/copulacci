@@ -467,7 +467,6 @@ def run_copula(
                 **kwargs
             ) for x, y in data_list
         )
-        print(res[10])
         if copula_params.copula_mode == 'vanilla':
             cop_df_dict[g1] = pd.DataFrame(res, columns=[
                     'copula_coeff',
