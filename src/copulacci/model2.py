@@ -585,6 +585,7 @@ def graph_permutation_pval(
     lig_df,
     rec_df,
     groups,
+    close_group=None,
     heteromeric = True,
     n = 1000,
     summarization='sum',
@@ -615,6 +616,9 @@ def graph_permutation_pval(
                 ['cell1', 'cell2', 'distance']
             ].to_records(index=False)
         )
+        self_group = False
+        if gpair.split('=')[0] == gpair.split('=')[1]:
+            self_group = True
         connection_df_list = []
         umi_sum_1_list = []
         umi_sum_2_list = []
@@ -638,6 +642,9 @@ def graph_permutation_pval(
         # Now create data_list with for each ligand receptor pair
         bg_group_dict = {}
         for index in lig_rec_index:
+            if close_group is not None:
+                if (index in close_group) and (not self_group):
+                    continue
             lig = lig_df.loc[index].values.tolist()
             rec = rec_df.loc[index].values.tolist()
             data_lig_rec = []
