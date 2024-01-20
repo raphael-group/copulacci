@@ -102,6 +102,7 @@ def construct_boundary(
         raise ValueError("Graph nodes must be same as number of cells")
     # relabel nodes if needed
     if len(set(list(G.nodes())).intersection(adata.obs_names)) != adata.obs_names.shape[0]:
+        node_dict = {}
         for node in G.nodes():
             node_dict[node] = adata.obs_names[node]
         G = nx.relabel_nodes(G, node_dict)
@@ -353,7 +354,7 @@ def prepare_data_list_from_spatial_network(
                 data_list_dict_selfloop, umi_sums_selfloop, dist_list_dict_selfloop
             )
     else:
-        return (data_list_dict, umi_sums, dist_list_dict, None, None)
+        return (data_list_dict, umi_sums, dist_list_dict, None, None, None)
 
 
 # Prepare data list
