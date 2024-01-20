@@ -7,6 +7,7 @@ from scipy import stats, linalg
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
 import networkx as nx
+import tqdm
 import time
 import spatial
 
@@ -641,7 +642,7 @@ def graph_permutation_pval(
               flush=True)
         # Now create data_list with for each ligand receptor pair
         bg_group_dict = {}
-        for index in lig_rec_index:
+        for index in tqdm.tqdm(lig_rec_index):
             if close_group is not None:
                 if (index in close_group) and (not self_group):
                     continue
