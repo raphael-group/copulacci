@@ -204,10 +204,11 @@ def extract_edge_from_spatial_network(
 
 
 def heteromeric_subunit_summarization(
-    count_df: pd.DataFrame,
-    int_edges : pd.DataFrame,
-    lig: list,
-    rec: list,
+    count_df,
+    int_edges : pd.DataFrame = None,
+    G : nx.Graph = None,
+    lig: list=[None],
+    rec: list=[None],
     summarization: str = "sum"
 )   :
     """
@@ -221,36 +222,69 @@ def heteromeric_subunit_summarization(
     Returns:
         data tuple
     """
+    if G is None and int_edges is None:
+        raise ValueError("G or int_edges must be provided")
     _lig = [l for l in lig if l is not None]
     _rec = [r for r in rec if r is not None]
+
     if len(_lig) > 1 or len(_rec) > 1:
         if summarization == "min":
-            data_tuple = (
-                    count_df.loc[ int_edges.cell1.values, _lig ].min(axis=1).values.astype('int'),
-                    count_df.loc[ int_edges.cell2.values, _rec ].min(axis=1).values.astype('int')
-            )
+            if G is None:
+                data_tuple = (
+                        count_df.loc[ int_edges.cell1.values, _lig ].min(axis=1).values.astype('int'),
+                        count_df.loc[ int_edges.cell2.values, _rec ].min(axis=1).values.astype('int')
+                )
+            else:
+                data_tuple = (
+                    count_df.loc[ list(G.nodes), _lig].min(axis=1).values,
+                    count_df.loc[ list(G.nodes), _rec].min(axis=1).values
+                )
         elif summarization == "max":
-            data_tuple = (
-                    count_df.loc[ int_edges.cell1.values, _lig ].max(axis=1).values.astype('int'),
-                    count_df.loc[ int_edges.cell2.values, _rec ].max(axis=1).values.astype('int')
-            )
+            if G is None:
+                data_tuple = (
+                        count_df.loc[ int_edges.cell1.values, _lig ].max(axis=1).values.astype('int'),
+                        count_df.loc[ int_edges.cell2.values, _rec ].max(axis=1).values.astype('int')
+                )
+            else:
+                data_tuple = (
+                    count_df.loc[ list(G.nodes), _lig].max(axis=1).values,
+                    count_df.loc[ list(G.nodes), _rec].max(axis=1).values
+                )
         elif summarization == "mean":
-            data_tuple = (
-                    count_df.loc[ int_edges.cell1.values, _lig ].mean(axis=1).values.astype('int'),
-                    count_df.loc[ int_edges.cell2.values, _rec ].mean(axis=1).values.astype('int')
-            )
+            if G is None:
+                data_tuple = (
+                        count_df.loc[ int_edges.cell1.values, _lig ].mean(axis=1).values.astype('int'),
+                        count_df.loc[ int_edges.cell2.values, _rec ].mean(axis=1).values.astype('int')
+                )
+            else:
+                data_tuple = (
+                    count_df.loc[ list(G.nodes), _lig].mean(axis=1).values,
+                    count_df.loc[ list(G.nodes), _rec].mean(axis=1).values
+                )
         elif summarization == "sum":
-            data_tuple = (
-                    count_df.loc[ int_edges.cell1.values, _lig ].sum(axis=1).values.astype('int'),
-                    count_df.loc[ int_edges.cell2.values, _rec ].sum(axis=1).values.astype('int')
-            )
+            if G is None:
+                data_tuple = (
+                        count_df.loc[ int_edges.cell1.values, _lig ].sum(axis=1).values.astype('int'),
+                        count_df.loc[ int_edges.cell2.values, _rec ].sum(axis=1).values.astype('int')
+                )
+            else:
+                data_tuple = (
+                    count_df.loc[ list(G.nodes), _lig].sum(axis=1).values,
+                    count_df.loc[ list(G.nodes), _rec].sum(axis=1).values
+                )
         else:
             raise ValueError("summarization must be one of min, max, mean, sum")
     else:
-        data_tuple = (
-            count_df.loc[ int_edges.cell1.values, _lig ].values.flatten().astype('int'),
-            count_df.loc[ int_edges.cell2.values, _rec ].values.flatten().astype('int')
-        )
+        if G is None:
+            data_tuple = (
+                count_df.loc[ int_edges.cell1.values, _lig ].values.flatten().astype('int'),
+                count_df.loc[ int_edges.cell2.values, _rec ].values.flatten().astype('int')
+            )
+        else:
+            data_tuple = (
+                count_df.loc[ list(G.nodes), _lig].values.flatten(),
+                count_df.loc[ list(G.nodes), _rec].values.flatten()
+            )
     return data_tuple
 
 
@@ -355,6 +389,89 @@ def prepare_data_list_from_spatial_network(
             )
     else:
         return (data_list_dict, umi_sums, dist_list_dict, None, None, None)
+
+
+def prepare_data_list_from_multiple_groups(
+    count_df: pd.DataFrame,
+    int_edges: pd.DataFrame,
+    celltype: str,
+    int_dir: str = 'source',
+    only_boundary: bool = False,
+    lig_rec_info_df = None,
+    heteromeric = False,
+    lig_df = None,
+    rec_df = None,
+    summarization = "min",
+    separate_lig_rec_type = False,
+    data_type = 'visium'
+):
+    """
+    Prepare data list from spatial network when one of the taget or source celltype is ALL
+    """
+    if int_dir == 'source':
+        int_edges_selected = int_edges.loc[ int_edges.celltype1 == celltype, :].copy()
+    elif int_dir:
+        int_edges_selected = int_edges.loc[ int_edges.celltype2 == celltype, :].copy()
+    else:
+        int_edges_selected = int_edges.loc[
+            (int_edges.celltype1 == celltype) | (int_edges.celltype2 == celltype),
+            :
+        ].copy()
+    if only_boundary:
+        int_edges_selected = int_edges_selected.loc[
+            int_edges_selected.boundary_type == "External", :
+        ].copy()
+
+    int_edges_selfloop = None
+    if not only_boundary and separate_lig_rec_type:
+        int_edges_selfloop = int_edges_selected.loc[ int_edges_selected.self_loop, : ]
+    umi_sums = {}
+    umi_sums_selfloop = {}
+    data_list = {}
+    data_list_selfloop = {}
+    if heteromeric:
+        if lig_df is None or rec_df is None:
+            raise ValueError("lig_list and rec_list must be provided")
+        lig_list = lig_df.values
+        rec_list = rec_df.values
+        assert(len(lig_list) == len(rec_list))
+        if separate_lig_rec_type:
+            if int_edges_selfloop is not None:
+                umi_sums_selfloop['celltyp1'] = count_df.loc[ int_edges_selfloop.cell1.values, : ].sum(1).values
+                umi_sums_selfloop['celltyp2'] = count_df.loc[ int_edges_selfloop.cell2.values, : ].sum(1).values
+        umi_sums['celltyp1'] = count_df.loc[ int_edges_selected.cell1.values, : ].sum(1).values
+        umi_sums['celltyp2'] = count_df.loc[ int_edges_selected.cell2.values, : ].sum(1).values
+
+        for index, row in lig_rec_info_df.iterrows():
+
+            lig = lig_df.loc[index].values.tolist()
+            rec = rec_df.loc[index].values.tolist()
+            if separate_lig_rec_type:
+                if row.annotation == 'Cell-Cell Contact' and data_type == 'visium':
+                    if int_edges_selfloop is not None:
+                        data_list_selfloop[index]  = heteromeric_subunit_summarization(
+                            count_df,
+                            int_edges = int_edges_selfloop,
+                            lig = lig,
+                            rec = rec,
+                            summarization = summarization
+                        )
+                    else:
+                        continue
+
+            data_list[index] = heteromeric_subunit_summarization(
+                    count_df,
+                    int_edges = int_edges_selected,
+                    lig = lig,
+                    rec = rec,
+                    summarization = summarization
+                )
+
+    else:
+        raise ValueError("Not implemented")
+    if separate_lig_rec_type and len(data_list_selfloop) > 0:
+        return (data_list, umi_sums, data_list_selfloop, umi_sums_selfloop)
+    return (data_list, umi_sums, None, None)
 
 
 # Prepare data list

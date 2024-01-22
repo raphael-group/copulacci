@@ -683,3 +683,226 @@ def graph_permutation_pval(
             bg_group_dict[index] = copula_coeffs.copy()
         bg_coeffs_dict[gpair] = bg_group_dict.copy()
     return bg_coeffs_dict
+
+
+# Other methods
+# SCC
+def spatial_cross_correlation(
+    x,
+    y,
+    weight
+):
+    # scale weights
+    """
+        This function calculates the spatial cross correlation
+        between two variables.
+        Parameters:
+        -----------
+        x: array-like
+            The first variable
+        y: array-like
+            The second variable
+        weight: array-like
+            The weight matrix
+    """
+    weight = np.matrix(weight)
+    rs = weight.sum(1)
+    rs[rs == 0] = 1
+    weight = weight / rs
+
+    N = len(x)
+    W = int(np.ceil(weight.sum()))
+    dx = x - x.mean()
+    dy = y - y.mean()
+    cv1 = np.outer(dx, dy)
+    cv2 = np.outer(dy, dx)
+    cv1[np.isnan(cv1)] = 0
+    cv2[np.isnan(cv2)] = 0
+
+    cv = np.sum(np.multiply(weight , ( cv1 + cv2 )))
+    v = np.sqrt(np.nansum(dx**2) * np.nansum(dy**2))
+    SCC = (N/W) * (cv/v) / 2.0
+    return SCC
+
+
+def spatial_corr_test(
+    x,
+    y,
+    weight,
+    n = 500
+):
+    """
+        This function calculates the p-value for the spatial cross correlation
+        between two variables.
+        Parameters:
+        -----------
+        x: array-like
+            The first variable
+        y: array-like
+            The second variable
+        weight: array-like
+            The weight matrix
+        n: int
+            The number of permutations
+    """
+    I = spatial_cross_correlation(x,y,weight)
+    xbg_corr_tets = []
+    for _ in range(n):
+        xbg = x.copy()
+        np.random.shuffle(xbg)
+        xbg_corr_tets += [spatial_cross_correlation(xbg, y, weight)]
+    xbg_corr_tets.append(I)
+    bg = np.array(xbg_corr_tets)
+    pvalue = np.sum(bg > I) / (n+1)
+    return [I, pvalue]
+
+
+def scc_caller(
+        x,
+        y,
+        weight,
+        n = 500,
+        add_pval = False
+):
+    """
+    This function is called from multiple threads
+    calculate SCC and add p-value if required
+    Parameters:
+    -----------
+    x: array-like
+        The first variable
+    TODO - Add more documentation
+    """
+    if add_pval:
+        return spatial_corr_test(x, y, weight, n)
+    return spatial_cross_correlation(x, y, weight)
+
+
+def run_scc(
+    count_df,
+    lig_rec_info_df,
+    int_edges,
+    groups,
+    heteronomic = True,
+    lig_df = None,
+    rec_df = None,
+    summarization = 'sum',
+    n_jobs = 2,
+    verbose = 1,
+    distance_aware = False,
+    seperate_lig_rec_type = True,
+    data_type = 'visium',
+    add_pval = False,
+    n = 500
+):
+    """
+    Parameters:
+    -----------
+    count_df: pd.DataFrame
+        The count matrix
+    lig_rec_info_df: pd.DataFrame
+    int_edges: pd.DataFrame
+        The edge dataframe
+    groups: list
+        The list of groups
+    heteronomic: bool
+        Whether to run for heteromeric interactions
+    lig_df: pd.DataFrame
+        The ligand dataframe (heteronomic only)
+    rec_df: pd.DataFrame
+        The receptor dataframe (heteronomic only)
+    summarization: str
+        The summarization method
+    n_jobs: int
+        The number of jobs to run in parallel
+    verbose: int
+        The verbosity level for Parallel
+    distance_aware: bool
+        Whether to consider distance (not implemented yet)
+    seperate_lig_rec_type: bool
+        Whether to consider ligand receptor type
+    data_type: str
+        The data type e.g. visium
+    add_pval: bool
+        Whether to add p-value
+    n: int
+        The number of permutations
+    TODO - Add more documentation
+    """
+    count_df_norm = count_df.div(count_df.sum(1), axis = 0) * 1e6
+    count_df_norm_log = np.log( count_df_norm + 1 )
+    if groups is None:
+        groups = int_edges.interaction.unique().tolist()
+
+    scc_dict = {}
+    for gpair in groups:
+        print(gpair)
+        g11, g12 = gpair.split('=')
+        G = nx.Graph()
+        # Ignore the distance for now
+        if not distance_aware:
+            # if this is across cell-types then remove self loops
+            # if exists !
+            # TODO should not exist
+            connection_df = int_edges.loc[int_edges.interaction == gpair,
+                ['cell1', 'cell2']
+            ]
+            if g11 != g12:
+                connection_df = connection_df.loc[
+                    connection_df.cell1 != connection_df.cell2
+                ]
+            G.add_edges_from(
+                int_edges.loc[int_edges.interaction == gpair,
+                    ['cell1', 'cell2']
+                ].to_records(index=False)
+            )
+            # If this is a self interaction make sure to add self loops
+            # let's add them again even if they should be added
+            if g11 == g12:
+                G.add_edges_from(
+                    [(i, i) for i in connection_df.cell1]
+                )
+        else:
+            raise ValueError('Not implemented')
+        weight = nx.adjacency_matrix(G).todense()
+        data_list = []
+        lig_rec_list = []
+        if heteronomic:
+            for index, row in lig_rec_info_df.iterrows():
+                lig = lig_df.loc[index].values.tolist()
+                rec = rec_df.loc[index].values.tolist()
+                if seperate_lig_rec_type:
+                    if row.annotation == 'Cell-Cell Contact' and \
+                    data_type == 'visium' and \
+                    g11 != g12:
+                        continue
+
+                data_list += [
+                    spatial.heteromeric_subunit_summarization(
+                        count_df_norm_log,
+                        G=G,
+                        lig=lig,
+                        rec=rec,
+                        summarization=summarization
+                    )
+                ]
+                lig_rec_list += [index]
+
+            res = Parallel(n_jobs=n_jobs, verbose=verbose)(
+                delayed(scc_caller)(
+                    x,
+                    y,
+                    weight,
+                    add_pval,
+                    n
+                ) for x, y in data_list)
+            if add_pval:
+                res_df = pd.DataFrame(np.array(res), columns=['scc', 'scc_pval'],
+                                      index=lig_rec_list
+                        )
+            else:
+                res_df = pd.DataFrame(res, columns=['scc'], index=lig_rec_list)
+            scc_dict[gpair] = res_df.copy()
+        else:
+            raise ValueError('Not implemented')
+    return scc_dict

@@ -50,16 +50,16 @@ def get_dt_cdf(x, lam, DT=True):
 
 def sample_from_copula(
     n_array,
-    mu_x, 
-    mu_y, 
+    mu_x,
+    mu_y,
     coeff
-):    
+):
     cov = linalg.toeplitz([1,coeff])
     lam_x = n_array * np.exp(mu_x)
     lam_y = n_array * np.exp(mu_y)
     samples = np.random.multivariate_normal(
-        [0,0], 
-        cov, 
+        [0,0],
+        cov,
         size = len(n_array)
     )
     samples = pd.DataFrame(samples, columns=['x', 'y'])
@@ -67,16 +67,16 @@ def sample_from_copula(
     cdf_y = stats.norm.cdf(samples.y)
     samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
     samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
-   
+
     return samples
 
 
 def sample_from_copula_dist(
     n_array,
-    mu_x, 
-    mu_y, 
+    mu_x,
+    mu_y,
     coeff_list
-):    
+):
     lam_x = n_array * np.exp(mu_x)
     lam_y = n_array * np.exp(mu_y)
 
@@ -86,31 +86,31 @@ def sample_from_copula_dist(
     #                     [[1, coeff], [coeff, 1]],
     #                     size = 1) for coeff in coeff_list)
     # samples = np.array(list(chain(*(samples))))
-    
+
     samples = np.array([np.random.multivariate_normal(
-            [0,0], 
-            [[1,coeff],[coeff,1]], 
+            [0,0],
+            [[1,coeff],[coeff,1]],
             size = 1
         ).squeeze() for coeff in coeff_list])
-        
+
     samples = pd.DataFrame(samples, columns=['x', 'y'])
     cdf_x = stats.norm.cdf(samples.x)
     cdf_y = stats.norm.cdf(samples.y)
     samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
     samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
-    
+
     return samples
 
 
 def sample_from_copula_grad(
     n_array,
-    mu_x, 
+    mu_x,
     mu_y,
     coeff_list,
     dist,
     l = None,
     t = 0
-):    
+):
     if l is None:
         l = max(dist)
     lam_x = (n_array * np.exp(mu_x)) * np.exp(-(t * (dist/l**2)))
@@ -122,19 +122,19 @@ def sample_from_copula_grad(
     #                     [[1, coeff], [coeff, 1]],
     #                     size = 1) for coeff in coeff_list)
     # samples = np.array(list(chain(*(samples))))
-    
+
     samples = np.array([np.random.multivariate_normal(
-            [0,0], 
-            [[1,coeff],[coeff,1]], 
+            [0,0],
+            [[1,coeff],[coeff,1]],
             size = 1
         ).squeeze() for coeff in coeff_list])
-        
+
     samples = pd.DataFrame(samples, columns=['x', 'y'])
     cdf_x = stats.norm.cdf(samples.x)
     cdf_y = stats.norm.cdf(samples.y)
     samples.loc[:, 'x'] = stats.poisson.ppf(cdf_x, lam_x)
     samples.loc[:, 'y'] = stats.poisson.ppf(cdf_y, lam_y)
-    
+
     return samples
 
 
@@ -147,9 +147,9 @@ def scdesign_copula(x, y, DT=False):
     return np.corrcoef(z.T)[0, 1]
 
 
-def call_pois_single_param_opt(x, y, 
-                               reg=False, 
-                               alpha=1.0, 
+def call_pois_single_param_opt(x, y,
+                               reg=False,
+                               alpha=1.0,
                                DT=False,
                                cutoff=0.6,
                                length_cutoff=20):
@@ -159,7 +159,7 @@ def call_pois_single_param_opt(x, y,
         return ([ 0, x.mean(), y.mean(), 'skip' ])
     if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
         return ([ 0, x.mean(), y.mean(), 'skip' ])
-    
+
     lam1 = x.mean()
     lam2 = y.mean()
     def copula_coeff_lik(params, _x, _y, reg=False, DT=False, alpha=1.0, cutoff = 0.6, length_cutoff=20):
@@ -171,7 +171,7 @@ def call_pois_single_param_opt(x, y,
         r_x = get_dt_cdf(x, lam1, DT=DT)
         r_y = get_dt_cdf(y, lam2, DT=DT)
         z = np.column_stack([r_x, r_y])
-    
+
         # get gaussuan part using z
         cov =linalg.toeplitz(np.array([1,coeff], dtype = 'float'))
         #inv_cov = np.linalg.inv(cov)
@@ -186,11 +186,11 @@ def call_pois_single_param_opt(x, y,
             logsum -= alpha * (coeff**2)
         return -logsum
     res = minimize(
-        copula_coeff_lik, 
-        x0=[0.0], 
-        method = 'Nelder-Mead', 
-        bounds = [(-0.9, 0.9)], 
-        args=(x,y,reg,DT,alpha,cutoff,length_cutoff), 
+        copula_coeff_lik,
+        x0=[0.0],
+        method = 'Nelder-Mead',
+        bounds = [(-0.9, 0.9)],
+        args=(x,y,reg,DT,alpha,cutoff,length_cutoff),
         tol=1e-6
     )
     return ([res.x[0], x.mean(), y.mean(), 'copula'])
@@ -205,7 +205,7 @@ def call_pois_multi_param_opt(x,y,DT=False):
         r_x = get_dt_cdf(x, lam1, DT=DT)
         r_y = get_dt_cdf(y, lam2, DT=DT)
         z = np.column_stack([r_x, r_y])
-    
+
         # get gaussuan part using z
         cov =linalg.toeplitz(np.array([1,coeff], dtype = 'float'))
         #inv_cov = np.linalg.inv(cov)
@@ -218,17 +218,17 @@ def call_pois_multi_param_opt(x,y,DT=False):
         # get the pdf for marginals
         logsum += np.sum(np.log(stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ))
         logsum += np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
-        
+
         return -1 * logsum
 
     lam_x_start = x.mean()
     lam_y_start = y.mean()
     res = minimize(
-        copula_coeff_lik, 
-        x0=[0.0, lam_x_start, lam_y_start], 
-        method = 'Nelder-Mead', 
-        bounds = [(-0.98, 0.98), (0, np.max(x)), (0, np.max(y))], 
-        args=(x,y,DT), 
+        copula_coeff_lik,
+        x0=[0.0, lam_x_start, lam_y_start],
+        method = 'Nelder-Mead',
+        bounds = [(-0.98, 0.98), (0, np.max(x)), (0, np.max(y))],
+        args=(x,y,DT),
         tol=1e-6
     )
     return res.x
@@ -239,21 +239,21 @@ def log_joint_lik_perm_old(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True
     coeff = params[0]
     mu_1 = params[1]
     mu_2 = params[2]
-    
+
     lam1 = umi_sum_1 * np.exp(mu_1)
     lam2 = umi_sum_2 * np.exp(mu_2)
-    
+
     # get z
     r_x = get_dt_cdf(x, lam1, DT=DT)
     r_y = get_dt_cdf(y, lam2, DT=DT)
     if DT:
-        for _ in range(perm-1):    
+        for _ in range(perm-1):
             r_x += get_dt_cdf(x, lam1)
             r_y += get_dt_cdf(y, lam2)
         z = np.column_stack([r_x/perm, r_y/perm])
     else:
         z = np.column_stack([r_x, r_y])
-    
+
     # get gaussuan part using z
     if model == 'gaussian':
         cov =linalg.toeplitz(np.array([1.0, coeff], dtype = 'float'))
@@ -280,7 +280,7 @@ def log_joint_lik_perm_old(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True
     norm_term = -0.5 * len(x) * np.log(det+EPSILON)
     exp_term = np.sum(-0.5 * np.sum(z @ (inv_cov - np.identity(2)) * z, axis=1))
     logsum = norm_term + exp_term
-    
+
     # get the pdf for marginals
     logsum += np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ))
     logsum += np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
@@ -292,21 +292,21 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
     coeff = params[0]
     mu_1 = params[1]
     mu_2 = params[2]
-    
+
     lam1 = umi_sum_1 * np.exp(mu_1)
     lam2 = umi_sum_2 * np.exp(mu_2)
-    
+
     # get z
     r_x = get_dt_cdf(x, lam1, DT=DT)
     r_y = get_dt_cdf(y, lam2, DT=DT)
     if DT:
-        for _ in range(perm-1):    
+        for _ in range(perm-1):
             r_x += get_dt_cdf(x, lam1)
             r_y += get_dt_cdf(y, lam2)
         z = np.column_stack([r_x/perm, r_y/perm])
     else:
         z = np.column_stack([r_x, r_y])
-    
+
     # term1
     det = 1 - coeff**2
     if return_sum:
@@ -315,22 +315,22 @@ def log_joint_lik_perm(params, umi_sum_1, umi_sum_2, x, y, perm=100, DT=True, mo
             np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
             np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
         )
-        
+
         term3 = -0.5 * len(x) * np.log(det+EPSILON)
         logsum = term1 + term2 + term3
-    
+
         return -logsum
     else:
         term1 = -0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1])
         term2 = (
-            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
+            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) +
             np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
         )
         term3 = -0.5 * np.log(det+EPSILON)
         return (term1 + term2 + term3)
 
 
-def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, 
+def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list,
     perm=100, DT=True, model = 'copula', return_sum = True):
     # get lam parameters for mu_1
     rho_zero = params[0]
@@ -338,43 +338,44 @@ def log_joint_lik_perm_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list,
     coeff_list = rho_zero * np.exp(-1 * dist_list * rho_one)
     mu_1 = params[2]
     mu_2 = params[3]
-    
+
     lam1 = umi_sum_1 * np.exp(mu_1)
     lam2 = umi_sum_2 * np.exp(mu_2)
-    
+
     # get z
     r_x = get_dt_cdf(x, lam1, DT=DT)
     r_y = get_dt_cdf(y, lam2, DT=DT)
     if DT:
-        for _ in range(perm-1):    
+        for _ in range(perm-1):
             r_x += get_dt_cdf(x, lam1)
             r_y += get_dt_cdf(y, lam2)
         z = np.column_stack([r_x/perm, r_y/perm])
     else:
         z = np.column_stack([r_x, r_y])
-    
+
     # term1
     det = 1 - coeff_list**2
     if return_sum:
         term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
-        
+
         term2 = (
             np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
             np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
         )
-        
+
         term3 = np.sum(-0.5 * np.log(det+EPSILON))
         logsum = term1 + term2 + term3
-    
+
         return -logsum
     else:
         term1 = -0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1])
         term2 = (
-            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) + 
+            np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) ) +
             np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) )
         )
         term3 = -0.5 * np.log(det+EPSILON)
         return (term1 + term2 + term3)
+
 
 def log_joint_lik_perm_grad_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list,  grad_list, perm=100, DT=True, model = 'copula'):
     # get lam parameters for mu_1
@@ -390,41 +391,41 @@ def log_joint_lik_perm_grad_dist(params, umi_sum_1, umi_sum_2, x, y, dist_list, 
     lam2 = (umi_sum_2 * np.exp(mu_2)) * np.exp(-(t * (grad_list / l**2)))
     #lam1 = umi_sum_1 * np.exp(mu_1)
     #lam2 = umi_sum_2 * np.exp(mu_2)
-    
+
     # get z
     r_x = get_dt_cdf(x, lam1, DT=DT)
     r_y = get_dt_cdf(y, lam2, DT=DT)
     if DT:
-        for _ in range(perm-1):    
+        for _ in range(perm-1):
             r_x += get_dt_cdf(x, lam1)
             r_y += get_dt_cdf(y, lam2)
         z = np.column_stack([r_x/perm, r_y/perm])
     else:
         z = np.column_stack([r_x, r_y])
-    
+
     # term1
     det = 1 - coeff_list**2
     term1 = np.sum(-0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff_list/det) * z[:,0] * z[:,1]) )
-    
+
     term2 = (
         np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
         np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
     )
-    
+
     term3 = np.sum(-0.5 * np.log(det+EPSILON))
     logsum = term1 + term2 + term3
-   
+
     return -logsum
 
 
 def call_optimizer_dense(
-    _x, 
-    _y, 
-    _umi_sum_1, 
-    _umi_sum_2, 
+    _x,
+    _y,
+    _umi_sum_1,
+    _umi_sum_2,
     method = 'Nelder-Mead',
     perm=10,DT = True,
-    cutoff=0.6, 
+    cutoff=0.6,
     length_cutoff=20,
     model='copula',
     num_restarts = 50,
@@ -441,7 +442,7 @@ def call_optimizer_dense(
         _y = _y[nz_ind]
         _umi_sum_1 = _umi_sum_1[nz_ind]
         _umi_sum_2 = _umi_sum_2[nz_ind]
-    
+
     if(zero_pair_filter):
         zz_percent = ((_x == 0) & (_y==0)).sum() / len(_x)
         if zz_percent >= zz_ratio_cutoff:
@@ -460,13 +461,13 @@ def call_optimizer_dense(
     method_type = model
 
     if not force:
-        # If either of the arrays are too sparse we would run  
+        # If either of the arrays are too sparse we would run
         # gaussian extimate rather than anything else
         inds_zero = np.where((x == 0) & (y == 0))[0]
         if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
             method_type = 'skip'
-        
-    
+
+
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
@@ -480,13 +481,13 @@ def call_optimizer_dense(
     else:
         for _ in range(num_restarts):
             res = minimize(
-                log_joint_lik_perm, 
-                x0=[0.0,mu_x_start,mu_y_start], 
-                method = method, 
+                log_joint_lik_perm,
+                x0=[0.0,mu_x_start,mu_y_start],
+                method = method,
                 bounds = [(-0.99, 0.99),
                           (mu_x_start-5, 0),
-                          (mu_y_start-5, 0)], 
-                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"), 
+                          (mu_y_start-5, 0)],
+                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"),
                 tol=1e-6
             )
             results += [res.copy()]
@@ -495,9 +496,9 @@ def call_optimizer_dense(
 
 
 def call_optimizer_dense_dist(
-    _x, 
-    _y, 
-    _umi_sum_1, 
+    _x,
+    _y,
+    _umi_sum_1,
     _umi_sum_2,
     dist_list,
     rho_one_start = 0.01,
@@ -520,50 +521,49 @@ def call_optimizer_dense_dist(
     if(zero_pair_filter):
         zz_percent = ((_x == 0) & (_y==0)).sum() / len(_x)
         if zz_percent >= zz_ratio_cutoff:
-            return ([ 0, 0, 0 , 'skip_zz' ])
-    
+            return ([ 0, 0, 0 , 0, 'skip_zz' ])
+
     if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     if ( (x.sum() == 0) or (y.sum() == 0) ):
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     if len(x) < length_cutoff:
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     umi_sum_1 = _umi_sum_1.copy()
     umi_sum_2 = _umi_sum_2.copy()
     method_type = model
 
     if not force:
-        # If either of the arrays are too sparse we would run  
+        # If either of the arrays are too sparse we would run
         # gaussian extimate rather than anything else
-        
+
         if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
-            
             method_type = 'skip'
-        
-    
+
+
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
     if mu_cutoff_filter:
         if (mu_x_start < mu_cutoff) | (mu_y_start < mu_cutoff):
-            return ([ 0, 0, 0 , 'skip_mu' ])
+            return ([ 0, 0, 0 , 0, 'skip_mu' ])
 
     if method_type == 'skip':
         return ([ 0, 0, 0, 0 , 'skip' ])
     else:
         for _ in range(num_restarts):
             res = minimize(
-                log_joint_lik_perm_dist, 
-                x0=[0.0,rho_one_start,mu_x_start,mu_y_start], 
-                method = method, 
+                log_joint_lik_perm_dist,
+                x0=[0.0,rho_one_start,mu_x_start,mu_y_start],
+                method = method,
                 bounds = [(-0.99, 0.99),
                           (0.0, 0.1),
                           (mu_x_start-5, 0),
-                          (mu_y_start-5, 0)], 
-                args=(umi_sum_1,umi_sum_2,x,y, dist_list,perm,DT,"copula"), 
+                          (mu_y_start-5, 0)],
+                args=(umi_sum_1,umi_sum_2,x,y, dist_list,perm,DT,"copula"),
                 tol=1e-6
             )
             results += [res.copy()]
@@ -572,9 +572,9 @@ def call_optimizer_dense_dist(
 
 
 def call_optimizer_dense_grad(
-    _x, 
-    _y, 
-    _umi_sum_1, 
+    _x,
+    _y,
+    _umi_sum_1,
     _umi_sum_2,
     dist_list,
     grad_list,
@@ -591,27 +591,27 @@ def call_optimizer_dense_grad(
     x = _x.copy()
     y = _y.copy()
     if (np.isnan( stats.spearmanr(x / _umi_sum_1, y / _umi_sum_2).correlation )):
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     if ( (x.sum() == 0) or (y.sum() == 0) ):
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     if len(x) < length_cutoff:
-        
+
         return ([ 0, 0, 0, 0 , 'skip' ])
     umi_sum_1 = _umi_sum_1.copy()
     umi_sum_2 = _umi_sum_2.copy()
     method_type = model
 
     if not force:
-        # If either of the arrays are too sparse we would run  
+        # If either of the arrays are too sparse we would run
         # gaussian extimate rather than anything else
-        
+
         if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
-            
+
             method_type = 'skip'
-        
-    
+
+
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
@@ -620,16 +620,16 @@ def call_optimizer_dense_grad(
     else:
         for _ in range(num_restarts):
             res = minimize(
-                log_joint_lik_perm_grad_dist, 
-                x0=[0.0,rho_one_start,mu_x_start,mu_y_start,1], 
-                method = method, 
+                log_joint_lik_perm_grad_dist,
+                x0=[0.0,rho_one_start,mu_x_start,mu_y_start,1],
+                method = method,
                 bounds = [(-0.99, 0.99),
                           (0.0, 0.1),
                           (mu_x_start-5, 0),
                           (mu_y_start-5, 0),
                           (0,50)
-                         ], 
-                args=(umi_sum_1,umi_sum_2,x,y, dist_list,grad_list,perm,DT,"copula"), 
+                         ],
+                args=(umi_sum_1,umi_sum_2,x,y, dist_list,grad_list,perm,DT,"copula"),
                 tol=1e-6
             )
             results += [res.copy()]
@@ -638,8 +638,8 @@ def call_optimizer_dense_grad(
 
 
 # Call copula
-def call_optimizer_full(_x, _y, 
-                       _umi_sum_1, 
+def call_optimizer_full(_x, _y,
+                       _umi_sum_1,
                        _umi_sum_2, method = 'Nelder-Mead',perm=10,DT=True,cutoff=0.6,model='copula',
                        num_restarts = 50,force=False,quick=False):
     x = _x.copy()
@@ -651,7 +651,7 @@ def call_optimizer_full(_x, _y,
     method_type = model
 
     if not force:
-        # If either of the arrays are too sparse we would run  
+        # If either of the arrays are too sparse we would run
         # gaussian extimate rather than anything else
         inds_zero = np.where((x == 0) & (y == 0))[0]
         if ( ((x==0).sum() / len(x) > cutoff) | ((y==0).sum() / len(y) > cutoff) ):
@@ -659,8 +659,8 @@ def call_optimizer_full(_x, _y,
         elif(len(inds_zero)/len(x) > cutoff):
             method_type = 'gaussian'
         elif( (x.max() == 1) and (y.max() == 1) ):
-            method_type = 'gaussian' 
-    
+            method_type = 'gaussian'
+
     results = []
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
@@ -669,17 +669,17 @@ def call_optimizer_full(_x, _y,
             r_x = get_dt_cdf(x, x.mean(), DT=DT)
             r_y = get_dt_cdf(y, y.mean(), DT=DT)
             z = np.column_stack([r_x, r_y])
-            return ([np.corrcoef(z.T)[0][1],mu_x_start,mu_y_start,'gaussian'])   
+            return ([np.corrcoef(z.T)[0][1],mu_x_start,mu_y_start,'gaussian'])
         else:
             for _ in range(num_restarts):
                 res = minimize(
-                    log_joint_lik_perm, 
-                    x0=[0.0,mu_x_start,mu_y_start], 
-                    method = method, 
+                    log_joint_lik_perm,
+                    x0=[0.0,mu_x_start,mu_y_start],
+                    method = method,
                     bounds = [(-0.99, 0.99),
                               (mu_x_start-5, 0),
-                              (mu_y_start-5, 0)], 
-                    args=(umi_sum_1,umi_sum_2,x,y,1,True,"gaussian"), 
+                              (mu_y_start-5, 0)],
+                    args=(umi_sum_1,umi_sum_2,x,y,1,True,"gaussian"),
                     tol=1e-6
                 )
                 results += [res.copy()]
@@ -688,13 +688,13 @@ def call_optimizer_full(_x, _y,
     else:
         for _ in range(num_restarts):
             res = minimize(
-                log_joint_lik_perm, 
-                x0=[0.0,mu_x_start,mu_y_start], 
-                method = method, 
+                log_joint_lik_perm,
+                x0=[0.0,mu_x_start,mu_y_start],
+                method = method,
                 bounds = [(-0.99, 0.99),
                           (mu_x_start-5, 0),
-                          (mu_y_start-5, 0)], 
-                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"), 
+                          (mu_y_start-5, 0)],
+                args=(umi_sum_1,umi_sum_2,x,y,perm,DT,"copula"),
                 tol=1e-6
             )
             results += [res.copy()]
@@ -794,7 +794,7 @@ def run_copula(
                 'copula_method'
                 ])
             cop_df_dict[g1] = tmp.copy()
-            
+
     else:
         if dist_list_dict is None:
             for g1 in groups:
@@ -856,7 +856,7 @@ def run_copula(
                             model=model,
                             num_restarts = num_restarts
                             ) for (x,y) in data_list)
-                # tmp = pd.DataFrame(res,columns=[g1+'_zero', g1+'_one', g11+'_mu_x', 
+                # tmp = pd.DataFrame(res,columns=[g1+'_zero', g1+'_one', g11+'_mu_x',
                 #                                 g12+'_mu_y', g1+'_copula_method'])
                 tmp = pd.DataFrame(res,columns=[
                     'rho_zero',
@@ -867,7 +867,7 @@ def run_copula(
                 ])
                 cop_df_dict[g1] = tmp.copy()
                 # cop_df = pd.concat([cop_df, tmp.copy()], axis = 1)
-    
+
                 if heteronomic:
                     if df_lig_rec is None:
                         raise ValueError('df_lig_rec is None')
@@ -877,7 +877,7 @@ def run_copula(
                         raise ValueError('lig_rec_pair_list is None')
                     cop_df_dict[g1].index = [l+'_'+r for l,r in lig_rec_pair_list]
                     cop_df_dict[g1].loc[:,'ligand'] = cop_df_dict[g1].index.str.split('_').str[0]
-                    cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]        
+                    cop_df_dict[g1].loc[:,'receptor'] = cop_df_dict[g1].index.str.split('_').str[1]
     return cop_df_dict
 
 
@@ -890,13 +890,13 @@ def merge_data_groups(
 ):
     if merged_group_name is None:
         merged_group_name = 'group_merged'
-    
+
     data_list_merged = []
-    
+
     umi_sum_source = []
     umi_sum_target = []
     dist_list_merged = []
-    
+
     # num of ligands
     num_of_ligands = len(data_list_dict[groups[0]])
     for i in range(num_of_ligands):
@@ -908,21 +908,21 @@ def merge_data_groups(
                 np.concatenate(edge_target)
             )
         ]
-            
+
     for g in groups:
         g1, g2 = g.split('=')
         umi_sum_source += [ umi_sums[g][g1] ]
         umi_sum_target += [ umi_sums[g][g2] ]
         dist_list_merged  += [ dist_list_dict[g] ]
-        
-    
-    
+
+
+
     umi_sums_merged = {
         'ligand' : np.concatenate(umi_sum_source),
         'receptor' : np.concatenate(umi_sum_target)
     }
     dist_list_merged = np.concatenate( dist_list_merged  )
-    return (data_list_merged, umi_sums_merged, dist_list_merged) 
+    return (data_list_merged, umi_sums_merged, dist_list_merged)
 
 
 # TODO The alternate hypotheis has many different in-equality condition
@@ -958,7 +958,7 @@ def run_diff_copula(
     if isinstance(group_2, list) and len(group_2) > 1:
         raise ValueError('groups_2 has more than one group: not implemented yet')
     # null model
-    # Fow all the ligands and receptors the null model 
+    # Fow all the ligands and receptors the null model
     # assumes that the interaction coefficient is same
     # We merge the groups and run the copula
     print('Running null hypothesis on merged data')
@@ -992,14 +992,14 @@ def run_diff_copula(
             rho, mu_x, mu_y, meth = row[1]
             if meth == 'copula':
                 likvalues_null += [log_joint_lik_perm(
-                    [rho, mu_x, mu_y], 
-                    umi_sums_merged['ligand'], 
-                    umi_sums_merged['receptor'], 
+                    [rho, mu_x, mu_y],
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
                     data_list_merged[i][0],
                     data_list_merged[i][1],
-                    perm=perm, 
-                    DT=DT, 
-                    model=model_type) 
+                    perm=perm,
+                    DT=DT,
+                    model=model_type)
                 ]
             else:
                 likvalues_null += [0]
@@ -1023,23 +1023,23 @@ def run_diff_copula(
                 ) for (x,y) in data_list_merged
         )
         # Get likelihoods for these values
-        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x', 
+        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x',
                                         'null_mu_y', 'null_copula_method'])
         likvalues_null = []
-        
+
         for i, row in enumerate(tmp.iterrows()):
             rho_zero, rho_one, mu_x, mu_y, meth = row[1]
             if meth == 'copula':
                 likvalues_null += [log_joint_lik_perm_dist(
-                    [rho_zero, rho_one, mu_x, mu_y], 
-                    umi_sums_merged['ligand'], 
-                    umi_sums_merged['receptor'], 
-                    data_list_merged[i][0], 
-                    data_list_merged[i][1], 
+                    [rho_zero, rho_one, mu_x, mu_y],
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
+                    data_list_merged[i][0],
+                    data_list_merged[i][1],
                     dist_list_merged,
-                    perm=perm, 
-                    DT=DT, 
-                    model=model_type) 
+                    perm=perm,
+                    DT=DT,
+                    model=model_type)
                 ]
             else:
                 likvalues_null += [0]
@@ -1061,7 +1061,7 @@ def run_diff_copula(
         groups = [group_1, group_2]
     )
     # Calculate likelihoods
-    
+
     likvalues_alt = {}
     if dist_list_dict is None:
         for g in [group_1, group_2]:
@@ -1071,14 +1071,14 @@ def run_diff_copula(
             for i, [rho, mu_x, mu_y, meth] in enumerate(cop_alt_df[g].values):
                 if meth == 'copula':
                     likvalues += [log_joint_lik_perm(
-                        [rho, mu_x, mu_y], 
-                        umi_sums[g][g1], 
-                        umi_sums[g][g2], 
+                        [rho, mu_x, mu_y],
+                        umi_sums[g][g1],
+                        umi_sums[g][g2],
                         data_list_dict[g][i][0],
                         data_list_dict[g][i][1],
-                        perm=perm, 
-                        DT=DT, 
-                        model=model_type) 
+                        perm=perm,
+                        DT=DT,
+                        model=model_type)
                     ]
                 else:
                     likvalues += [0]
@@ -1091,15 +1091,15 @@ def run_diff_copula(
             for i, [rho_zero, rho_one, mu_x, mu_y, meth] in enumerate(cop_alt_df[g].values):
                 if meth == 'copula':
                     likvalues += [log_joint_lik_perm_dist(
-                        [rho_zero, rho_one, mu_x, mu_y], 
-                        umi_sums[g][g1], 
-                        umi_sums[g][g2], 
+                        [rho_zero, rho_one, mu_x, mu_y],
+                        umi_sums[g][g1],
+                        umi_sums[g][g2],
                         data_list_dict[g][i][0],
                         data_list_dict[g][i][1],
                         dist_list_dict[g],
-                        perm=perm, 
-                        DT=DT, 
-                        model=model_type) 
+                        perm=perm,
+                        DT=DT,
+                        model=model_type)
                     ]
                 else:
                     likvalues += [0]
@@ -1109,12 +1109,12 @@ def run_diff_copula(
         (np.array(list(likvalues_alt.values())).T, likvalues_null[:, np.newaxis])
     )
     likhood_df = pd.DataFrame(likhood_df, columns=['alt_0', 'alt_1', 'null'])
-    lr =  -2*(likhood_df_nz['null'] - 
+    lr =  -2*(likhood_df_nz['null'] -
         ( likhood_df_nz['alt_0'] + likhood_df_nz['alt_1'] )
     )
-    likhood_df['lr'] = lr  
+    likhood_df['lr'] = lr
     return likhood_df
-    
+
 
 def run_diff_copula(
     data_list_dict: dict,
@@ -1143,7 +1143,7 @@ def run_diff_copula(
     if len(group_2) > 1:
         raise ValueError('groups_2 has more than one group: not implemented yet')
     # null model
-    # Fow all the ligands and receptors the null model 
+    # Fow all the ligands and receptors the null model
     # assumes that the interaction coefficient is same
     # We merge the groups and run the copula
     data_list_merged, umi_sums_merged, dist_list_merged = merge_data_groups(
@@ -1173,14 +1173,14 @@ def run_diff_copula(
         for i, rho, mu_x, mu_y, meth in enumerate(res):
             if meth == 'copula':
                 likvalues += [log_joint_lik_perm(
-                    [rho, mu_x, mu_y], 
-                    umi_sums_merged['ligand'], 
-                    umi_sums_merged['receptor'], 
+                    [rho, mu_x, mu_y],
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
                     data_list_merged[i][0],
                     data_list_merged[i][1],
-                    perm=perm, 
-                    DT=DT, 
-                    model='copula') 
+                    perm=perm,
+                    DT=DT,
+                    model='copula')
                 ]
             else:
                 likvalues += [0]
@@ -1203,21 +1203,21 @@ def run_diff_copula(
                 ) for (x,y) in data_list_merged
         )
         # Get likelihoods for these values
-        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x', 
+        tmp = pd.DataFrame(res,columns=['merged_null_zero', 'merged_null_one', 'null_mu_x',
                                         'null_mu_y', 'null_copula_method'])
         likvalues = []
         for rho_zero, rho_one, mu_x, mu_y, meth in res:
             if meth == 'copula':
                 likvalues += [log_joint_lik_perm_dist(
-                    [rho_zero, rho_one, mu_x, mu_y], 
-                    umi_sums_merged['ligand'], 
-                    umi_sums_merged['receptor'], 
-                    data_list_merged[i][0], 
-                    data_list_merged[i][1], 
+                    [rho_zero, rho_one, mu_x, mu_y],
+                    umi_sums_merged['ligand'],
+                    umi_sums_merged['receptor'],
+                    data_list_merged[i][0],
+                    data_list_merged[i][1],
                     dist_list_merged,
-                    perm=perm, 
-                    DT=DT, 
-                    model='copula') 
+                    perm=perm,
+                    DT=DT,
+                    model='copula')
                 ]
             else:
                 likvalues += [0]
@@ -1241,7 +1241,7 @@ def run_diff_copula(
     if dist_list_dict is None:
         for g in groups:
             g1, g2 = g.split('=')
-            cop_alt_df_slice = cop_alt_df[[g + '_zero', g + '_one', 
+            cop_alt_df_slice = cop_alt_df[[g + '_zero', g + '_one',
                                            g1 + '_mu_x', g2 + '_mu_y',
                                             g + '_copula_method']].copy()
             pass
@@ -1256,7 +1256,7 @@ def call_spearman(x, y, _umi_sum_x, _umi_sum_y):
     # If we don't get at least 10 pairs of non edges we
     # return spearman
     # return (stats.spearmanr(x / x.sum(), y / y.sum()).correlation)
-    return (stats.spearmanr(x / _umi_sum_x, 
+    return (stats.spearmanr(x / _umi_sum_x,
                             y / _umi_sum_y).correlation)
 
 
@@ -1268,7 +1268,7 @@ def linearize_copula_result(
     cop_df_dict = {}
     if heteronomic:
         for gpair in groups:
-            cols_cop = [gpair, gpair+'_copula_method']    
+            cols_cop = [gpair, gpair+'_copula_method']
             df_chosen = cop_df[cols_cop].copy()
             df_chosen = df_chosen.rename(columns={gpair:'copula_coeff', gpair+'_copula_method':'copula_method'})
             cop_df_dict[gpair] = df_chosen.copy()
@@ -1289,22 +1289,22 @@ def linearize_copula_result_dist(
     cop_df_dict = {}
     if heteronomic:
         for gpair in groups:
-            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']    
+            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']
             df_chosen = cop_df[cols_cop].copy()
             df_chosen = df_chosen.rename(columns={
-                gpair+'_zero':'rho_zero', 
-                gpair+'_one':'rho_one', 
+                gpair+'_zero':'rho_zero',
+                gpair+'_one':'rho_one',
                 gpair+'_copula_method':'copula_method'}
             )
             cop_df_dict[gpair] = df_chosen.copy()
     else:
         cop_df = cop_df.reset_index().drop('index', axis = 1)
         for gpair in groups:
-            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']    
+            cols_cop = [gpair+'_one', gpair+'_zero', gpair+'_copula_method']
             df_chosen = cop_df[cols_cop].copy()
             df_chosen = df_chosen.rename(columns={
-                gpair+'_zero':'rho_zero', 
-                gpair+'_one':'rho_one', 
+                gpair+'_zero':'rho_zero',
+                gpair+'_one':'rho_one',
                 gpair+'_copula_method':'copula_method'}
             )
             cop_df_dict[gpair] = df_chosen.copy()
@@ -1331,7 +1331,7 @@ def add_spearman(
 ) -> dict:
     if groups is None:
         groups = data_list_dict.keys()
-    
+
     for g1 in groups:
         data_list = data_list_dict[g1]
         g11, g12 = g1.split('=')
@@ -1368,11 +1368,11 @@ def add_spearman_pval(
             if 'spearman' not in res_bg.columns:
                 raise ValueError('No spearman values found')
             intersting_pairs = res_bg[res_bg['spearman'] >= np.percentile(res_bg.spearman.values, percentile_cutoff)].index
-            
+
             res_bg = res_bg.loc[ intersting_pairs ]
             # res_bg['spearman_pval'] = 1.0
             # Do permutation test on them
-            print('found ', len(intersting_pairs), ' pairs..') 
+            print('found ', len(intersting_pairs), ' pairs..')
             for i in intersting_pairs:
                 print(".", end='', flush=True)
                 x,y = data_list[i]
@@ -1386,7 +1386,7 @@ def add_spearman_pval(
                         x1.copy(),
                         y
                         )
-                        
+
                     ]
                 res_perm = Parallel(n_jobs=n_jobs, verbose=0)(
                     delayed(call_spearman)(x,y,umi_sums[g1][g11], umi_sums[g1][g12]) for (x,y) in perm_data_list)
@@ -1395,10 +1395,10 @@ def add_spearman_pval(
                 res_bg.loc[i, 'pval'] = pvalue
             if(len(intersting_pairs) > 0):
                 _,res_bg['qval'], _, _ = sm.stats.multipletests(res_bg.pval.values,alpha=0.05, method='fdr_bh')
-                res_bg['celltype_direction'] = g1 
+                res_bg['celltype_direction'] = g1
                 final_res_cop = pd.concat([final_res_cop, res_bg.copy()], axis = 0)
                 print('\n')
-            print('computing pval for ', g1, ' with ', len(intersting_pairs), ' pairs in ', 
+            print('computing pval for ', g1, ' with ', len(intersting_pairs), ' pairs in ',
                   time.time() - start_time, ' seconds')
     else:
         raise Warning('Not implemented yet')
@@ -1423,7 +1423,7 @@ def draw_copula_permutation(
             x1.copy(),
             y
             )
-            
+
         ]
     res_perm = Parallel(n_jobs=n_jobs, verbose=1)(
                         delayed(call_optimizer_dense)(
@@ -1471,12 +1471,12 @@ def add_copula_pval(
     remove_identical = True,
     permute_data = True
 ) -> pd.DataFrame:
-    
+
     final_res_cop = pd.DataFrame()
     if groups is None:
         groups = data_list_dict.keys()
     import time
-    
+
     if permute_data:
         print('The permutation of spatial points for every L-R pair over 1K times will take a while ...')
         for g1 in groups:
@@ -1491,7 +1491,7 @@ def add_copula_pval(
                 res_bg.index = range(len(res_bg))
                 if remove_identical:
                     res_bg = res_bg.loc[res_bg.lig_rec.str.split('_').str[0] != res_bg.lig_rec.str.split('_').str[1]].copy()
-                
+
             data_list = data_list_dict[g1]
             res_bg = res_bg.loc[res_bg.copula_method == 'copula']
             if len(res_bg) == 0:
@@ -1501,17 +1501,17 @@ def add_copula_pval(
             # is rho_zero which is copula_coeff effectively. So take a copy
             if not 'copula_coeff' in res_bg.columns:
                 res_bg['copula_coeff'] = res_bg['rho_zero'].copy()
-            
-                
+
+
             intersting_pairs = res_bg[res_bg['copula_coeff'] >= np.percentile(res_bg.copula_coeff.values, percentile_cutoff)].index
             res_bg = res_bg.loc[ intersting_pairs ]
             res_bg['pval'] = 1.0
-                
-            
+
+
             # Do permutation test on them
             interval = int(len(intersting_pairs) / 10)
             print('found ', len(intersting_pairs), ' pairs..')
-            progress = 0 
+            progress = 0
             for i in intersting_pairs:
                 #if i%interval == 0:
                 print(progress, end='\r', flush=True)
@@ -1528,7 +1528,7 @@ def add_copula_pval(
                         x1.copy(),
                         y1.copy()
                         )
-                        
+
                     ]
                 if dist_list_dict is None:
                     res_perm = Parallel(n_jobs=n_jobs, verbose=verbose)(
@@ -1571,10 +1571,10 @@ def add_copula_pval(
                     res_bg.loc[i, 'pval'] = pvalue
                 progress += 1
             _,res_bg['qval'], _, _ = sm.stats.multipletests(res_bg.pval.values,alpha=0.05, method='fdr_bh')
-            res_bg['celltype_direction'] = g1 
+            res_bg['celltype_direction'] = g1
             final_res_cop = pd.concat([final_res_cop, res_bg.copy()], axis = 0)
             print('\n')
-            print('computing pval for ', g1, ' with ', len(intersting_pairs), ' pairs in ', 
+            print('computing pval for ', g1, ' with ', len(intersting_pairs), ' pairs in ',
                   time.time() - start_time, ' seconds')
     else:
         # Make random L-R pairs
@@ -1582,12 +1582,12 @@ def add_copula_pval(
             raise ValueError('For heteronomic ligand-receptors the ligand-receptor pairs permutation is not implemented yet.')
         df_lig_rec_rand = pd.DataFrame(columns=df_lig_rec.columns)
         df_lig_rec_rand.loc[:,'ligand'] = random.choices(
-            list(df_lig_rec.ligand.values), 
-            k = n,   
+            list(df_lig_rec.ligand.values),
+            k = n,
         )
         df_lig_rec_rand.loc[:,'receptor'] = random.choices(
-            list(df_lig_rec.receptor.values), 
-            k = n,   
+            list(df_lig_rec.receptor.values),
+            k = n,
         )
         # Prepare data list
         if int_edges_new_with_selfloops is None:
@@ -1599,7 +1599,7 @@ def add_copula_pval(
             lig_rec_pair_list,
             groups,
         )
-        
+
         print('The permutation of will only permute LR pairs not spatial points')
         rand_cop_df = run_copula(
             rand_data_list_dict,
@@ -1622,18 +1622,18 @@ def add_copula_pval(
             rand_values = rand_cop_dict[g1].copula_coeff.values
             def find_pval(num):
                 bg = rand_values.copy()
-                bg = np.append(bg,num) 
+                bg = np.append(bg,num)
                 pvalue = np.sum(abs(bg) > abs(num)) / len(bg)
                 return pvalue
-        
+
             res_bg.loc[:,'pval'] = res_bg.copula_coeff.apply(find_pval)
             _,res_bg['qval'], _, _ = sm.stats.multipletests(res_bg.pval.values,alpha=0.05, method='fdr_bh')
             res_bg['celltype_direction'] = g1
-            
+
             final_res_cop = pd.concat([final_res_cop, res_bg.copy()], axis = 0)
             print('\n')
-            print('computing pval for ', g1, ' with ', res_bg.shape[0], ' pairs in ', 
-                    time.time() - start_time, ' seconds') 
+            print('computing pval for ', g1, ' with ', res_bg.shape[0], ' pairs in ',
+                    time.time() - start_time, ' seconds')
 
     return final_res_cop
 
@@ -1657,7 +1657,7 @@ def scc_caller(x,y,weight, lig, rec):
             # ),
             0.1,
             lig,
-            rec 
+            rec
         ]
     )
 
@@ -1675,8 +1675,8 @@ def scc_caller_nonheteronomic(x,y,weight):
 
 
 def spatial_cross_correlation(
-    x, 
-    y,        
+    x,
+    y,
     weight
 ):
     # scale weights
@@ -1684,7 +1684,7 @@ def spatial_cross_correlation(
     rs = weight.sum(1)
     rs[rs == 0] = 1
     weight = weight / rs
-    
+
     N = len(x)
     W = int(np.ceil(weight.sum()))
     dx = x - x.mean()
@@ -1693,7 +1693,7 @@ def spatial_cross_correlation(
     cv2 = np.outer(dy, dx)
     cv1[np.isnan(cv1)] = 0
     cv2[np.isnan(cv2)] = 0
-    
+
     cv = np.sum(np.multiply(weight , ( cv1 + cv2 )))
     v = np.sqrt(np.nansum(dx**2) * np.nansum(dy**2))
     SCC = (N/W) * (cv/v) / 2.0
@@ -1717,7 +1717,7 @@ def spatial_corr_test(x, y , weight, n = 1000, ncores=1,plot = True):
         fig,ax = plt.subplots(1,1, figsize=(4,4))
         ax.hist(xbg_corr_tets, density=True, alpha = 0.8, label = 'Background');
         ax.axvline(I, color='red', linestyle='--', label='2.5%')
-    
+
     xbg_corr_tets.append(I)
     bg = np.array(xbg_corr_tets)
     pvalue = np.sum(bg > I) / (n+1)
@@ -1740,7 +1740,7 @@ def run_scc(
     count_df_norm_log = np.log( count_df_norm + 1 )
     if groups is None:
         groups = int_edges_new_with_selfloops.interaction.unique()
-    
+
 
     for gpair in groups:
         print(gpair)
@@ -1752,7 +1752,7 @@ def run_scc(
                 ["cell1", "cell2","distance"]
             ].to_records(index=False)
         )
-        
+
 
         if g11 == g12:
             G = nx.Graph()
@@ -1761,7 +1761,7 @@ def run_scc(
             G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
-            G.add_weighted_edges_from(lr_pairs_g1) 
+            G.add_weighted_edges_from(lr_pairs_g1)
         print(G)
 
         # lr_pairs_g1 = int_edges_new_with_selfloops.loc[
@@ -1776,7 +1776,7 @@ def run_scc(
         #     G.add_edges_from(self_loops)
         # else:
         #     G = nx.DiGraph()
-        #     G.add_edges_from(lr_pairs_g1.values) 
+        #     G.add_edges_from(lr_pairs_g1.values)
         # print(G)
 
         weight = nx.adjacency_matrix(G).todense()
@@ -1784,27 +1784,27 @@ def run_scc(
         if heteronomic:
             if (lig_list is None) or (rec_list is None):
                 raise ValueError('lig_list or rec_list is None')
-            
+
             for _,(lig, rec) in enumerate(zip(lig_list, rec_list)):
                 _lig = [l for l in lig if l != None]
                 _rec = [r for r in rec if r != None]
                 if summarization == 'min':
-                    data_list += [( 
-                        count_df_norm_log.loc[ list(G.nodes), _lig].min(axis=1).values, 
+                    data_list += [(
+                        count_df_norm_log.loc[ list(G.nodes), _lig].min(axis=1).values,
                         count_df_norm_log.loc[ list(G.nodes), _rec].min(axis=1).values,
                         weight.copy()
                         )
                     ]
                 elif summarization == "mean":
-                    data_list += [( 
-                        count_df_norm_log.loc[ list(G.nodes), _lig].max(axis=1).values, 
+                    data_list += [(
+                        count_df_norm_log.loc[ list(G.nodes), _lig].max(axis=1).values,
                         count_df_norm_log.loc[ list(G.nodes), _rec].max(axis=1).values,
                         weight.copy()
                         )
                     ]
                 elif summarization == "sum":
-                    data_list += [( 
-                        count_df_norm_log.loc[ list(G.nodes), _lig].sum(axis=1).values, 
+                    data_list += [(
+                        count_df_norm_log.loc[ list(G.nodes), _lig].sum(axis=1).values,
                         count_df_norm_log.loc[ list(G.nodes), _rec].sum(axis=1).values,
                         weight.copy()
                         )
@@ -1819,17 +1819,17 @@ def run_scc(
             if lig_rec_pair_list is None:
                 raise ValueError('lig_rec_pair_list is None')
             for lig,rec in lig_rec_pair_list:
-                data_list += [( count_df_norm_log.loc[ list(G.nodes), lig].values, 
+                data_list += [( count_df_norm_log.loc[ list(G.nodes), lig].values,
                             count_df_norm_log.loc[ list(G.nodes), rec ].values,
                             weight.copy(),
                             lig,
                             rec
                             )
                             ]
-            
+
             hypo_res = Parallel(n_jobs=20, verbose=1)(
                 delayed(scc_caller)(x,y,w,l,r) for (x,y,w,l,r) in data_list)
-            
+
             st_scc_df = pd.DataFrame(hypo_res, columns = ['scc', 'pval', 'ligand', 'receptor'])
             cop_df_dict[gpair]['scc'] = st_scc_df.scc.values
 
@@ -1847,14 +1847,14 @@ def run_sdm(
     heteronomic = False,
     add_self_loops = True
 ) -> dict:
-    
+
     sdm_dfs = {}
     adata = adata_orig.copy()
     adata.raw = adata.copy()
 
     if groups is None:
         groups = int_edges_new_with_selfloops.interaction.unique()
-    
+
 
     for gpair in groups:
         st = time.time()
@@ -1866,7 +1866,7 @@ def run_sdm(
                 ["cell1", "cell2","distance"]
             ].to_records(index=False)
         )
-        
+
 
         if g11 == g12:
             G = nx.Graph()
@@ -1876,9 +1876,9 @@ def run_sdm(
                 G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
-            G.add_weighted_edges_from(lr_pairs_g1) 
+            G.add_weighted_edges_from(lr_pairs_g1)
 
-       
+
 
         print(G)
 
@@ -1894,8 +1894,8 @@ def run_sdm(
         #     G.add_edges_from(self_loops)
         # else:
         #     G = nx.DiGraph()
-        #     G.add_edges_from(lr_pairs_g1.values) 
-       
+        #     G.add_edges_from(lr_pairs_g1.values)
+
         # print(G)
         adata_gpair = adata[ list(G.nodes), ].copy()
         print(adata_gpair.shape)
@@ -1907,7 +1907,7 @@ def run_sdm(
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
 
-        try: 
+        try:
             sdm.extract_lr(adata_gpair, species, min_cell=min_cell)
         except:
             print('no effective LR found')
@@ -1938,7 +1938,7 @@ def run_sdm(
                     for r in receptors:
                         if l != r:
                             lig_rec_list.append([l, r, val, p])
-                        
+
             global_score = pd.DataFrame(lig_rec_list).rename(columns={
                 0:'ligand',1:'receptor',
                 2:'global_I',3:'global_pval'}
