@@ -367,17 +367,30 @@ def prepare_data_list_from_spatial_network(
                 rec = rec_df.loc[index].values.tolist()
                 if separate_lig_rec_type:
                     if row.annotation == 'Cell-Cell Contact' and data_type == 'visium':
-                        data_list_selfloop += [heteromeric_subunit_summarization(count_df, int_edges_selfloop_g1,
-                                                                        lig, rec, summarization)
-                                ]
+                        data_list_selfloop += [heteromeric_subunit_summarization(
+                            count_df,
+                            int_edges=int_edges_selfloop_g1,
+                            lig=lig,
+                            rec=rec,
+                            summarization=summarization
+                            )
+                        ]
                     else:
-                        data_list += [heteromeric_subunit_summarization(count_df, int_edges_g1,
-                                                                    lig, rec, summarization)
-                                ]
+                        data_list += [heteromeric_subunit_summarization(
+                            count_df,
+                            int_edges=int_edges_g1,
+                            lig=lig,
+                            rec=rec,
+                            summarization=summarization
+                        )]
                 else:
-                    data_list += [heteromeric_subunit_summarization(count_df, int_edges_g1,
-                                                                    lig, rec, summarization)
-                            ]
+                    data_list += [heteromeric_subunit_summarization(
+                        count_df,
+                        int_edges=int_edges_g1,
+                        lig=lig,
+                        rec=rec,
+                        summarization=summarization
+                    )]
             if separate_lig_rec_type:
                 umi_sums_selfloop[g1] = g1_selfloop_dict.copy()
                 data_list_dict_selfloop[g1] = data_list_selfloop.copy()
