@@ -1898,6 +1898,11 @@ def run_sdm(
 
         # print(G)
         adata_gpair = adata[ list(G.nodes), ].copy()
+        # Following the tutorial from SpatialDM we
+        # need to take log normalization of the count data
+        adata_gpair.raw = adata_gpair.copy()
+        sc.pp.normalize_total(adata_gpair, target_sum=None)
+        sc.pp.log1p(adata_gpair)
         print(adata_gpair.shape)
         adata_gpair.uns['single_cell'] = False
         adj = nx.adjacency_matrix(G)
@@ -1906,11 +1911,12 @@ def run_sdm(
         # adj = normalize(adj, norm='l1', axis=1)
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
-
+        sc.pp.normalize_total(adata_gpair, target_sum=None)
+        sc.pp.log1p(adata_gpair)
         try:
             sdm.extract_lr(adata_gpair, species, min_cell=min_cell)
-        except:
-            print('no effective LR found')
+        except Exception as e:
+            print(f"no effective LR found : {e}")
             continue
         sdm.spatialdm_global(adata_gpair, 1000, specified_ind=None, method='z-score', nproc=nproc)     # global Moran selection
         sdm.sig_pairs(adata_gpair, method='z-score', fdr=True, threshold=0.1)     # select significant pairs

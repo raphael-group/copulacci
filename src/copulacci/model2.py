@@ -8,6 +8,7 @@ from scipy.optimize import minimize
 from joblib import Parallel, delayed
 import networkx as nx
 import tqdm
+import scanpy as sc
 import time
 import spatial
 
@@ -57,7 +58,6 @@ def get_dt_cdf(x, lam, DT=True):
     r[idx_adjust] = r[idx_adjust] + EPSILON
 
     return stats.norm.ppf(r)
-
 
 
 def sample_from_copula(
@@ -656,9 +656,9 @@ def graph_permutation_pval(
                     data_lig_rec += [
                         spatial.heteromeric_subunit_summarization(
                             count_df,
-                            connection_df,
-                            lig,
-                            rec,
+                            int_edges=connection_df,
+                            lig=lig,
+                            rec=rec,
                             summarization=summarization
                         )
                     ]
@@ -779,7 +779,7 @@ def scc_caller(
 
 
 def run_scc(
-    count_df,
+    adata,
     lig_rec_info_df,
     int_edges,
     groups,
@@ -793,7 +793,9 @@ def run_scc(
     seperate_lig_rec_type = True,
     data_type = 'visium',
     add_pval = False,
-    n = 500
+    n = 500,
+    use_spatialdm = False,
+    global_norm = False
 ):
     """
     Parameters:
@@ -829,8 +831,16 @@ def run_scc(
         The number of permutations
     TODO - Add more documentation
     """
-    count_df_norm = count_df.div(count_df.sum(1), axis = 0) * 1e6
-    count_df_norm_log = np.log( count_df_norm + 1 )
+    if global_norm:
+        if use_spatialdm:
+            sc.pp.normalize_total(adata, target_sum=None)
+            sc.pp.log1p(adata["X"])
+            count_df_norm_log = adata.to_df()
+        else:
+            count_df = adata.to_df()
+            count_df_norm = count_df.div(count_df.sum(1), axis = 0) * 1e6
+            count_df_norm_log = np.log( count_df_norm + 1 )
+
     if groups is None:
         groups = int_edges.interaction.unique().tolist()
 
@@ -864,6 +874,16 @@ def run_scc(
                 )
         else:
             raise ValueError('Not implemented')
+        adata_gpair = adata[list(G.nodes()),].copy()
+        if not global_norm:
+            if use_spatialdm:
+                sc.pp.normalize_total(adata_gpair, target_sum=None)
+                sc.pp.log1p(adata_gpair)
+                count_df_norm_log = adata_gpair.to_df()
+            else:
+                count_df = adata_gpair.to_df()
+                count_df_norm = count_df.div(count_df.sum(1), axis = 0) * 1e6
+                count_df_norm_log = np.log( count_df_norm + 1 )
         weight = nx.adjacency_matrix(G).todense()
         data_list = []
         lig_rec_list = []
@@ -876,16 +896,26 @@ def run_scc(
                     data_type == 'visium' and \
                     g11 != g12:
                         continue
-
-                data_list += [
-                    spatial.heteromeric_subunit_summarization(
-                        count_df_norm_log,
-                        G=G,
-                        lig=lig,
-                        rec=rec,
-                        summarization=summarization
-                    )
-                ]
+                if use_spatialdm:
+                    data_list += [
+                        spatial.heteromeric_subunit_summarization(
+                            count_df_norm_log,
+                            G=G,
+                            lig=lig,
+                            rec=rec,
+                            summarization=summarization
+                        )
+                    ]
+                else:
+                    ata_list += [
+                        spatial.heteromeric_subunit_summarization(
+                            count_df_norm_log,
+                            G=G,
+                            lig=lig,
+                            rec=rec,
+                            summarization=summarization
+                        )
+                    ]
                 lig_rec_list += [index]
 
             res = Parallel(n_jobs=n_jobs, verbose=verbose)(
