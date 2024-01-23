@@ -342,8 +342,8 @@ def call_optimizer(
         # as different starting points for the optimization
         if copula_mode == 'vanilla':
             coeff_start = np.random.uniform(-0.99, 0.99, num_starts)
-            mu_1_start = np.random.uniform(mu_x_start - 5, 0, num_starts)
-            mu_2_start = np.random.uniform(mu_y_start - 5, 0, num_starts)
+            mu_1_start = np.random.uniform(mu_x_start - 2, 0, num_starts)
+            mu_2_start = np.random.uniform(mu_y_start - 2, 0, num_starts)
             start_params = np.column_stack([coeff_start, mu_1_start, mu_2_start])
             results = []
             for i in range(num_starts):
@@ -351,7 +351,7 @@ def call_optimizer(
                     log_joint_lik,
                     x0 = start_params[i],
                     method=method,
-                    bounds=[(-0.99, 0.99), (mu_x_start-5, 0), (mu_y_start - 5, 0)],
+                    bounds=[(-0.99, 0.99), (start_params[i][1] - 5, 0), (start_params[i][2] - 5, 0)],
                     args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                     tol=tol
                 )
