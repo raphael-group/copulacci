@@ -593,7 +593,8 @@ def graph_permutation_pval(
     n_jobs = 2,
     verbose = 1,
     copula_params = CopulaParams(),
-    opt_params = OptParams()
+    opt_params = OptParams(),
+    **kwargs
 ):
     """
         This function adds p-values to the copula coefficients
@@ -676,7 +677,8 @@ def graph_permutation_pval(
                     umi_sum_1_list[i],
                     umi_sum_2_list[i],
                     copula_params,
-                    opt_params
+                    opt_params,
+                    **kwargs
                 ) for i in range(n)
             )
             copula_coeffs = np.array([res[0] for res in perm_copula_results])
