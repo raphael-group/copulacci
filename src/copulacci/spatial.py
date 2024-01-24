@@ -7,6 +7,7 @@ import squidpy as sq
 import networkx as nx
 import tqdm
 import scipy
+import spatialdm as sdm
 
 
 SpatialParams = namedtuple('SpatialParams', ['data_type',  'coord_type', 'n_neighs', 'n_rings', 'radius', 'distance_aware', 'deluanay'])
@@ -288,7 +289,108 @@ def heteromeric_subunit_summarization(
     return data_tuple
 
 
-def prepare_data_list_from_spatial_network(
+def prepare_data_list_for_other(
+    count_df: pd.DataFrame,
+    int_edges: pd.DataFrame,
+    groups: list = None,
+    lig_rec_info_df = None,
+    heteromeric = False,
+    lig_df = None,
+    rec_df = None,
+    summarization = "min",
+    separate_lig_rec_type = False,
+    close_contact_threshold = None,
+):
+    """
+    Prepare data list from spatial network for non-visium data.
+    Parameters:
+    -----------
+    TODO
+    """
+    if groups is None:
+        groups = int_edges.interaction.unique().tolist()
+    if ('annotation' not in lig_rec_info_df.columns) and separate_lig_rec_type:
+        raise ValueError("annotation must be in lig_rec_info_df to \
+                         separate ligand and receptor type")
+    if separate_lig_rec_type and close_contact_threshold is not None:
+        int_edges_close = int_edges.loc[ int_edges.distance <= close_contact_threshold, : ]
+        lig_rec_close = lig_rec_info_df.loc[ lig_rec_info_df.annotation == 'Cell-Cell Contact', :
+                            ].index
+        lig_rec_distant = lig_rec_info_df.loc[ lig_rec_info_df.annotation != 'Cell-Cell Contact', :
+                            ].index
+    else:
+        raise ValueError("close_contact_threshold must be provided if separate_lig_rec_type is True")
+
+
+    if heteromeric:
+        if lig_df is None or rec_df is None:
+            raise ValueError("lig_list and rec_list must be provided")
+        lig_list = lig_df.values
+        rec_list = rec_df.values
+        assert(len(lig_list) == len(rec_list))
+        data_list_dict = {}
+        data_list_dict_close = {}
+        umi_sums = {}
+        umi_sums_close = {}
+        dist_list_dict = {}
+        dist_list_dict_close = {}
+        for g1 in tqdm.tqdm(groups):
+            g1_dict = {}
+            g1_dict_close = {}
+            g11, g12 = g1.split('=')
+            int_edges_close_g1 = None
+            if separate_lig_rec_type:
+                # Add the close contacts first
+                # Get edges for this group pair
+                int_edges_close_g1 = int_edges_close.loc[ int_edges_close.interaction == g1, : ]
+                dist_list_dict_close[g1] = int_edges_close_g1['distance'].values
+                g1_dict_close[g11] = count_df.loc[ int_edges_close_g1.cell1.values, : ].sum(1).values
+                g1_dict_close[g12] = count_df.loc[ int_edges_close_g1.cell2.values, : ].sum(1).values
+
+            int_edges_g1 = int_edges.loc[ int_edges.interaction == g1, : ]
+            dist_list_dict[g1] = int_edges_g1['distance'].values
+            g1_dict[g11] = count_df.loc[ int_edges_g1.cell1.values, : ].sum(1).values
+            g1_dict[g12] = count_df.loc[ int_edges_g1.cell2.values, : ].sum(1).values
+            # Add the data for ligand receptors with close contact if separate_lig_rec_type is True
+            data_list = []
+            data_list_close = []
+            for index, row in lig_rec_info_df.iterrows():
+                lig = lig_df.loc[index].values.tolist()
+                rec = rec_df.loc[index].values.tolist()
+                if separate_lig_rec_type:
+                    if row.annotation == 'Cell-Cell Contact':
+                        if int_edges_close_g1 is not None:
+                            data_list_close += [heteromeric_subunit_summarization(
+                                count_df,
+                                int_edges=int_edges_close_g1,
+                                lig=lig,
+                                rec=rec,
+                                summarization=summarization
+                                )
+                            ]
+                        continue
+                data_list += [heteromeric_subunit_summarization(
+                    count_df,
+                    int_edges=int_edges_g1,
+                    lig=lig,
+                    rec=rec,
+                    summarization=summarization
+                )]
+            if separate_lig_rec_type:
+                assert(len(lig_rec_close) == len(data_list_close))
+                assert(len(lig_rec_distant) == len(data_list))
+                umi_sums_close[g1] = g1_dict_close.copy()
+                data_list_dict_close[g1] = data_list_close.copy()
+            umi_sums[g1] = g1_dict.copy()
+            data_list_dict[g1] = data_list.copy()
+    else:
+        raise ValueError("Not implemented")
+    if separate_lig_rec_type:
+        return (data_list_dict, umi_sums, data_list_dict_close, umi_sums_close)
+    return (data_list_dict, umi_sums, None, None)
+
+
+def prepare_data_list_for_visium(
     count_df: pd.DataFrame,
     int_edges: pd.DataFrame,
     groups: list = None,
@@ -328,6 +430,9 @@ def prepare_data_list_from_spatial_network(
     # If we are in visium then we have to consider only cell-cell contact
     # for self loops. For other interactions we have to consider both
     # self loops and other connections
+
+    # If we are in stereo-seq then we have to consider closer cell-cell
+
     if separate_lig_rec_type:
         int_edges_selfloop = int_edges.loc[ int_edges.self_loop, : ]
     if heteromeric:

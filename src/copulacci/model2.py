@@ -233,6 +233,7 @@ def log_joint_lik(
         term1 = -0.5 * (((coeff_list**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) -
                         2 * (coeff_list/det) * z[:,0] * z[:,1])
     else:
+        det = 1 - coeff**2
         term1 = -0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) -
                         2 * (coeff/det) * z[:,0] * z[:,1])
     term2 = (
@@ -293,6 +294,12 @@ def call_optimizer(
     force_opt = kwargs.get('force_opt', False)
 
     # If either of the two variables is empty return with status empty
+    if np.sum(x) == 0 | np.sum(y) == 0:
+        if copula_mode == 'vanilla':
+            return [0, 0, 0, 'all_zero']
+        else:
+            return [0, 0, 0, 0, 'all_zero']
+
     if (len(x) == 0) | (len(y) == 0):
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'empty']
