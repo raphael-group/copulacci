@@ -15,7 +15,7 @@ from scipy.optimize import minimize
 import networkx as nx
 import statsmodels.api as sm
 
-import spatial
+from copulacci import spatial
 import warnings
 
 

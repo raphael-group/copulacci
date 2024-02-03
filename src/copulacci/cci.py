@@ -1,8 +1,7 @@
 
-# Now depends on various other packages 
+# Now depends on various other packages
 # such as SpatialDM, Omnipath, Squidpy, etc.
 # Maybe remove dependencies in future?
-from sklearn.preprocessing import normalize
 from spatialdm.diff_utils import *
 import scanpy as sc
 import pandas as pd
@@ -37,10 +36,10 @@ def get_omnipath_int():
     interactions.rename(
         columns={"genesymbol_intercell_source": SOURCE, "genesymbol_intercell_target": TARGET}, inplace=True
     )
-    
+
     interactions[SOURCE] = interactions[SOURCE].str.replace("^COMPLEX:", "", regex=True)
     interactions[TARGET] = interactions[TARGET].str.replace("^COMPLEX:", "", regex=True)
-    
+
     def find_min_gene_in_complex(_complex):
         # TODO(michalk8): how can this happen?
         if _complex is None:
@@ -52,19 +51,19 @@ def get_omnipath_int():
             return None
         if len(complexes) == 1:
             return complexes[0]
-    
+
         df = data[complexes].mean()
-    
+
         return str(df.index[df.argmin()])
-    
+
     src = interactions.pop(SOURCE).apply(lambda s: str(s).split("_")).explode()
     src.name = SOURCE
     tgt = interactions.pop(TARGET).apply(lambda s: str(s).split("_")).explode()
     tgt.name = TARGET
-    
+
     interactions = pd.merge(interactions, src, how="left", left_index=True, right_index=True)
     interactions = pd.merge(interactions, tgt, how="left", left_index=True, right_index=True)
-    
+
     interactions.dropna(subset=(SOURCE, TARGET), inplace=True, how="any")
     interactions.drop_duplicates(subset=(SOURCE, TARGET), inplace=True, keep="first")
 
@@ -116,10 +115,10 @@ def ligand_receptor_database_commot(
     species
         The species of the ligand-receptor pairs. Choose between 'mouse' and 'human'.
     heteromeric_delimiter
-        The character to separate the heteromeric units of heteromeric ligands and receptors. 
+        The character to separate the heteromeric units of heteromeric ligands and receptors.
         For example, if the heteromeric receptor (TGFbR1, TGFbR2) will be represented as 'TGFbR1_TGFbR2' if this parameter is set to '_'.
     signaling_type
-        The type of signaling. Choose from 'Secreted Signaling', 'Cell-Cell Contact', and 'ECM-Receptor' for CellChatDB or 'Secreted Signaling' and 'Cell-Cell Contact' for CellPhoneDB_v4.0. 
+        The type of signaling. Choose from 'Secreted Signaling', 'Cell-Cell Contact', and 'ECM-Receptor' for CellChatDB or 'Secreted Signaling' and 'Cell-Cell Contact' for CellPhoneDB_v4.0.
         If None, all pairs in the database are returned.
 
     Returns
@@ -130,9 +129,9 @@ def ligand_receptor_database_commot(
     References
     ----------
 
-    .. [Jin2021] Jin, S., Guerrero-Juarez, C. F., Zhang, L., Chang, I., Ramos, R., Kuan, C. H., ... & Nie, Q. (2021). 
+    .. [Jin2021] Jin, S., Guerrero-Juarez, C. F., Zhang, L., Chang, I., Ramos, R., Kuan, C. H., ... & Nie, Q. (2021).
         Inference and analysis of cell-cell communication using CellChat. Nature communications, 12(1), 1-20.
-    .. [Efremova2020] Efremova, M., Vento-Tormo, M., Teichmann, S. A., & Vento-Tormo, R. (2020). 
+    .. [Efremova2020] Efremova, M., Vento-Tormo, M., Teichmann, S. A., & Vento-Tormo, R. (2020).
         CellPhoneDB: inferring cell–cell communication from combined expression of multi-subunit ligand–receptor complexes. Nature protocols, 15(4), 1484-1506.
 
     """
@@ -147,7 +146,7 @@ def ligand_receptor_database_commot(
         df_ligrec = pd.read_csv(io.BytesIO(data), index_col=0)
         if not signaling_type is None:
             df_ligrec = df_ligrec[df_ligrec.iloc[:,3] == signaling_type]
-        
+
     return df_ligrec
 
 
@@ -217,7 +216,7 @@ def filter_lr_database_commot(
             for gene in genes:
                 if not (gene in set(all_genes)):
                     gene_found = False
-            if not gene_found: 
+            if not gene_found:
                 continue
             keep = True
             if filter_criteria == 'min_cell_pct' and heteromeric_rule == 'min':
@@ -240,23 +239,23 @@ def filter_lr_database_commot(
                         keep = False
             if keep:
                 genes_keep.append(het_gene)
-    
+
     print("Kept genes: ", len(genes_keep))
     if format:
-        for i in range(df_ligrec.shape[0]): 
+        for i in range(df_ligrec.shape[0]):
             if df_ligrec.iloc[i,0] in genes_keep and df_ligrec.iloc[i,1] in genes_keep:
                 if "_" in df_ligrec.iloc[i,0] or "_" in df_ligrec.iloc[i,1]:
                     genes1 = df_ligrec.iloc[i,0].split("_")
                     genes2 = df_ligrec.iloc[i,1].split("_")
                     for gene1 in genes1:
                         for gene2 in genes2:
-                            ligrec_list.append([gene1, gene2, 
+                            ligrec_list.append([gene1, gene2,
                                                 df_ligrec.iloc[i,2], df_ligrec.iloc[i,3]])
                 else:
                     ligrec_list.append(list(df_ligrec.iloc[i,:]))
-    else: 
+    else:
         for i in range(df_ligrec.shape[0]):
             if df_ligrec.iloc[i,0] in genes_keep and df_ligrec.iloc[i,1] in genes_keep:
                 ligrec_list.append(list(df_ligrec.iloc[i,:]))
-    
+
     return pd.DataFrame(data=ligrec_list).drop_duplicates()

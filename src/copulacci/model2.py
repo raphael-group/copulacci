@@ -10,7 +10,7 @@ import networkx as nx
 import tqdm
 import scanpy as sc
 import time
-import spatial
+from copulacci import spatial
 
 
 EPSILON = 1.1920929e-07
