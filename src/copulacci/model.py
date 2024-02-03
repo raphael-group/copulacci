@@ -1871,9 +1871,9 @@ def run_sdm(
         if g11 == g12:
             G = nx.Graph()
             G.add_weighted_edges_from(lr_pairs_g1)
-            if add_self_loops:
-                self_loops = [(node, node, 1) for node in G.nodes]
-                G.add_weighted_edges_from(self_loops)
+            # if add_self_loops:
+            #     self_loops = [(node, node, 1) for node in G.nodes]
+            #     G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
             G.add_weighted_edges_from(lr_pairs_g1)

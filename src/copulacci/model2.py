@@ -294,7 +294,7 @@ def call_optimizer(
     force_opt = kwargs.get('force_opt', False)
 
     # If either of the two variables is empty return with status empty
-    if np.sum(x) == 0 | np.sum(y) == 0:
+    if x.sum() == 0 | y.sum() == 0:
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'all_zero']
         else:
@@ -616,6 +616,11 @@ def graph_permutation_pval(
     # Assume that the data has the exact size of ligand receptor pairs
     bg_coeffs_dict = {}
     start_time = time.time()
+    do_checkpoint = kwargs.get('do_checkpoint', False)
+    if do_checkpoint:
+        checkpoint_dir = kwargs.get('checkpoint_dir', '.')
+        checkpoint_interval = kwargs.get('checkpoint_interval', 50)
+        checkpoint_counter = 0
     for gpair in groups:
         # Create a the subgraph
         # for this interaction
@@ -762,16 +767,16 @@ def spatial_corr_test(
         xbg_corr_tets += [spatial_cross_correlation(xbg, y, weight)]
     xbg_corr_tets.append(I)
     bg = np.array(xbg_corr_tets)
-    pvalue = np.sum(bg > I) / (n+1)
-    return [I, pvalue]
+    pvalue = np.sum(abs(bg) >= abs(I)) / (n+1)
+    return list([I, pvalue])
 
 
 def scc_caller(
         x,
         y,
         weight,
+        add_pval=False,
         n = 500,
-        add_pval = False
 ):
     """
     This function is called from multiple threads
@@ -804,7 +809,8 @@ def run_scc(
     add_pval = False,
     n = 500,
     use_spatialdm = False,
-    global_norm = False
+    global_norm = False,
+    add_self_loops = False
 ):
     """
     Parameters:
@@ -877,7 +883,7 @@ def run_scc(
             )
             # If this is a self interaction make sure to add self loops
             # let's add them again even if they should be added
-            if g11 == g12:
+            if g11 == g12 and add_self_loops:
                 G.add_edges_from(
                     [(i, i) for i in connection_df.cell1]
                 )
@@ -916,7 +922,7 @@ def run_scc(
                         )
                     ]
                 else:
-                    ata_list += [
+                    data_list += [
                         spatial.heteromeric_subunit_summarization(
                             count_df_norm_log,
                             G=G,
@@ -932,9 +938,13 @@ def run_scc(
                     x,
                     y,
                     weight,
-                    add_pval,
-                    n
+                    add_pval=add_pval,
+                    n=n
                 ) for x, y in data_list)
+            # res = []
+            # for (x,y) in data_list:
+            #     res += [scc_caller(x, y, weight, add_pval=add_pval, n=n)]
+
             if add_pval:
                 res_df = pd.DataFrame(np.array(res), columns=['scc', 'scc_pval'],
                                       index=lig_rec_list
