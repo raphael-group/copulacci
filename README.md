@@ -140,4 +140,4 @@ sns.despine()
 plt.show()
 ```
 
-![image](https://hackmd.io/_uploads/SkiCv1hc6.png)
+![image](./img/simulation_boxplot.png)
