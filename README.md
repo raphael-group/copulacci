@@ -136,7 +136,6 @@ for text, handle in zip(leg.texts, leg.legend_handles):
 
 plt.setp(leg.texts, fontsize='10')
 sns.despine()
-                         'non_spatial_simulation_copula_1_24_24_buckets.pdf'), dpi = 300, bbox_inches='tight')
 plt.show()
 ```
 
