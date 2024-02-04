@@ -17,8 +17,8 @@ cd copulacci
 pip install .
 ```
 
-Quickly run for reproducing the plots from paper
----------------------------------------------------
+Quickly run for reproducing the simulated plots from paper
+-----------------------------------------------------------
 Download the prepared data from the [drive](https://drive.google.com/drive/folders/1Z14_vglLj_IiSS1sfE1PBSVHivX3hd8N?usp=sharing)
 
 ```python
