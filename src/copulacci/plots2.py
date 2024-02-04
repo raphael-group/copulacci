@@ -26,7 +26,10 @@ def draw_pairwise_scatter(
     """
     TODO : Add docstring
     """
-    res = merged_data_dict[gpair].copy()
+    if type(merged_data_dict) is pd.DataFrame:
+        res = merged_data_dict.copy()
+    else:
+        res = merged_data_dict[gpair].copy()
     if bimod_filter:
         res = res.loc[res.gmm_modality == 1].copy()
 
