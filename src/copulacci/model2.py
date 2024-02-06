@@ -4,6 +4,7 @@ import warnings
 import numpy as np
 import pandas as pd
 from scipy import stats, linalg
+from scipy.interpolate import UnivariateSpline
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
 import networkx as nx
@@ -244,6 +245,49 @@ def log_joint_lik(
     return term1 + term2 + term3
 
 
+def diff_using_num(
+        mu_1,
+        mu_2,
+        umi_sum_1,
+        umi_sum_2,
+        x,
+        y,
+        copula_params,
+        opt_params
+):
+    """
+    Take double derivative of the log likelihood function
+    """
+    DT = copula_params.DT
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+
+    z = np.column_stack([r_x, r_y])
+
+    def f(coeff):
+        det = 1 - coeff**2
+        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+        # term2 = (
+        #     np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+        #     np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        # )
+        term3 = -0.5 * len(x) * np.log(det+EPSILON)
+        logsum = term1+ term3
+        return -logsum
+
+    c = np.linspace(-0.99, 0.99, 1000)
+    val = np.array([f(coeff) for coeff in c])
+    y_spl = UnivariateSpline(c, val,s=0,k=4)
+    # Take second derivative
+    y_spl_2d = y_spl.derivative(n=2)
+    d2l = y_spl_2d(c)
+    return d2l
+
+
 def call_optimizer(
         x,
         y,
@@ -292,15 +336,16 @@ def call_optimizer(
     use_mu_cutoff = kwargs.get('use_mu_cutoff', False)
     mu_cutoff = kwargs.get('mu_cutoff', -8)
     force_opt = kwargs.get('force_opt', False)
+    stability_filter = kwargs.get('stability_filter', False)
 
     # If either of the two variables is empty return with status empty
-    if x.sum() == 0 | y.sum() == 0:
+    if x.sum() == 0 or y.sum() == 0:
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'all_zero']
         else:
             return [0, 0, 0, 0, 'all_zero']
 
-    if (len(x) == 0) | (len(y) == 0):
+    if (len(x) == 0) or (len(y) == 0):
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'empty']
         else:
@@ -324,8 +369,26 @@ def call_optimizer(
     mu_x_start = np.log(x.sum() / umi_sum_1.sum())
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
 
+    if stability_filter:
+        d2l = diff_using_num(
+            mu_x_start,
+            mu_y_start,
+            umi_sum_1,
+            umi_sum_2,
+            x,
+            y,
+            copula_params,
+            opt_params
+        )
+        # If double derivative is negative at any point then skip optimization
+        # as the function is not convex
+        if min(d2l) < 0:
+            skip_opt = True
+            opt_status = 'skip_stability_filter'
+
+
     if use_mu_cutoff and (skip_opt is False):
-        if (mu_x_start < mu_cutoff) | (mu_y_start < mu_cutoff):
+        if (mu_x_start < mu_cutoff) or (mu_y_start < mu_cutoff):
             skip_opt = True
             opt_status = 'skip_mu_cutoff'
 
