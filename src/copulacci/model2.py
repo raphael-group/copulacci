@@ -15,10 +15,17 @@ from copulacci import spatial
 
 
 EPSILON = 1.1920929e-07
-CopulaParams = namedtuple('CopulaParams', ['perm', 'DT', 'dist_list',
-                                           'copula_mode' , 'return_sum', 'rho_one_start']
-            )
-CopulaParams.__new__.__defaults__ = (1, False, None, 'vanilla', True, 0.01)
+CopulaParams = namedtuple('CopulaParams', [
+    'perm', 'DT', 'dist_list',
+    'mu_x', 'mu_y',
+    'copula_mode' , 'return_sum',
+    'rho_one_start'
+    ]
+)
+CopulaParams.__new__.__defaults__ = (1, False, None,
+                                     None, None,
+                                     'vanilla', True,
+                                     0.01)
 OptParams = namedtuple('OptParams', ['method', 'tol', 'maxiter', 'num_starts'])
 OptParams.__new__.__defaults__ = ('Nelder-Mead', 1e-6, 1e+6, 1)
 
@@ -180,6 +187,12 @@ def log_joint_lik(
         coeff = params[0]
         mu_1 = params[1]
         mu_2 = params[2]
+    elif mode == 'single_param':
+        coeff = params[0]
+        if mu_1 is None or mu_2 is None:
+            raise ValueError('mu_1 and mu_2 must be provided for mode single_param')
+        mu_1 = copula_params.mu_x
+        mu_2 = copula_params.mu_y
     else:
         rho_zero = params[0]
         rho_one = params[1]
@@ -288,6 +301,33 @@ def diff_using_num(
     return d2l
 
 
+def get_d2l_values(
+        x,
+        y,
+        umi_sum_1,
+        umi_sum_2,
+        copula_params,
+        opt_params,
+        **kwargs
+):
+    """
+    Take double derivative of the log likelihood function
+    """
+    mu_x_start = np.log(x.sum() / umi_sum_1.sum())
+    mu_y_start = np.log(y.sum() / umi_sum_2.sum())
+    d2l = diff_using_num(
+        mu_x_start,
+        mu_y_start,
+        umi_sum_1,
+        umi_sum_2,
+        x,
+        y,
+        copula_params,
+        opt_params
+    )
+    return min(d2l)
+
+
 def call_optimizer(
         x,
         y,
@@ -342,12 +382,16 @@ def call_optimizer(
     if x.sum() == 0 or y.sum() == 0:
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'all_zero']
+        elif copula_mode == 'single_param':
+            return [0, 'all_zero']
         else:
             return [0, 0, 0, 0, 'all_zero']
 
     if (len(x) == 0) or (len(y) == 0):
         if copula_mode == 'vanilla':
             return [0, 0, 0, 'empty']
+        elif copula_mode == 'single_param':
+            return [0, 'all_zero']
         else:
             return [0, 0, 0, 0, 'empty']
 
@@ -395,6 +439,8 @@ def call_optimizer(
     if skip_opt is True:
         if copula_mode == 'vanilla':
             return [0, mu_x_start, mu_y_start, opt_status]
+        if copula_mode == 'single_param':
+            return [0, opt_status]
         return [0, 0, mu_x_start, mu_y_start, opt_status]
 
     # Get optimization parameters
@@ -422,6 +468,24 @@ def call_optimizer(
                     x0 = start_params[i],
                     method=method,
                     bounds=[(-0.99, 0.99), (start_params[i][1] - 5, 0), (start_params[i][2] - 5, 0)],
+                    args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
+                    tol=tol
+                )
+                results += [res.copy()]
+            # Take the converged result with the lowest log likelihood
+            results = [res for res in results if res['success'] is True]
+            best_result = min(results, key=lambda x: x['fun'])
+            return list(best_result['x']) + [opt_status]
+        elif copula_mode == 'single_param':
+            coeff_start = np.random.uniform(-0.99, 0.99, num_starts)
+            start_params = np.column_stack([coeff_start])
+            results = []
+            for i in range(num_starts):
+                res = minimize(
+                    log_joint_lik,
+                    x0 = start_params[i],
+                    method=method,
+                    bounds=[(-0.99, 0.99)],
                     args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                     tol=tol
                 )
@@ -464,6 +528,17 @@ def call_optimizer(
                 x0=start_params,
                 method=method,
                 bounds=[(-0.99, 0.99), (mu_x_start-5, 0), (mu_y_start - 5, 0)],
+                args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
+                tol=tol
+            )
+            return list(res['x']) + [opt_status]
+        elif copula_mode == 'single_param':
+            start_params = np.array([0.0])
+            res = minimize(
+                log_joint_lik,
+                x0=start_params,
+                method=method,
+                bounds=[(-0.99, 0.99)],
                 args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                 tol=tol
             )
@@ -756,7 +831,7 @@ def graph_permutation_pval(
                     **kwargs
                 ) for i in range(n)
             )
-            copula_coeffs = np.array([res[0] for res in perm_copula_results])
+            copula_coeffs = np.array([res[0] for res in perm_copula_results if res[3] == 'copula'])
             bg_group_dict[index] = copula_coeffs.copy()
         bg_coeffs_dict[gpair] = bg_group_dict.copy()
     return bg_coeffs_dict
