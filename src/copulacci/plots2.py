@@ -22,7 +22,8 @@ def draw_pairwise_scatter(
     only_pos = False,
     figure_parent = '.',
     file_name = None,
-    center_plot = False
+    center_plot = False,
+    take_diff = False
 ):
     """
     TODO : Add docstring
@@ -53,12 +54,18 @@ def draw_pairwise_scatter(
         else:
             if only_pos:
                 res = res.loc[(res[x_col] > 0) & (res[y_col] > 0)]
-            sig1 = res.sort_values(by=x_col,
-                                key=lambda x: abs(x),
-                                ascending=False)[:ntop]
-            sig2 = res.sort_values(by=y_col,
-                                key=lambda x: abs(x),
-                                ascending=False)[:ntop]
+            if take_diff:
+                res['diff1'] = res[x_col] - res[y_col]
+                sig1 = res.sort_values('diff1', ascending=False)[:ntop]
+                res['diff2'] = res[y_col] - res[x_col]
+                sig2 = res.sort_values('diff2', ascending=False)[:ntop]
+            else:
+                sig1 = res.sort_values(by=x_col,
+                                    key=lambda x: abs(x),
+                                    ascending=False)[:ntop]
+                sig2 = res.sort_values(by=y_col,
+                                    key=lambda x: abs(x),
+                                    ascending=False)[:ntop]
             sig12 = sig1.join(sig2, rsuffix='_2',how='inner')
             sns.scatterplot(res, x=x_col, y=y_col,s = s, linewidth = 0,ax = ax[i])
             sns.scatterplot(

@@ -28,7 +28,8 @@ setuptools.setup(
         'anndata',
         'omnipath',
         'squidpy',
-        'spatialdm'
+        'spatialdm',
+        'adjustText'
     ],
     include_package_data = True,
     package_data = {

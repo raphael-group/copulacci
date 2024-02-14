@@ -1908,7 +1908,7 @@ def run_sdm(
         adj = nx.adjacency_matrix(G)
         # TODO Not sure if we should normalize
         # to match the the graph from copulacci
-        # adj = normalize(adj, norm='l1', axis=1)
+        adj = normalize(adj, norm='l1', axis=1)
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
         sc.pp.normalize_total(adata_gpair, target_sum=None)
