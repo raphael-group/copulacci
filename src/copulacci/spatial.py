@@ -42,7 +42,6 @@ def construct_spatial_network(
         sq.gr.spatial_neighbors(
             adata,
             radius = radius,
-            n_neighs = n_neighs,
             coord_type="generic"
         )
 

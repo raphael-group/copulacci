@@ -215,3 +215,86 @@ def draw_pairwise_difference_scatter(
     if file_name is not None:
         plt.savefig(os.path.join(figure_parent, file_name), format='pdf', dpi=500)
     plt.show()
+
+
+def get_loc_df(adata):
+    loc = adata.obsm['spatial']
+
+    loc_df = pd.DataFrame(loc).rename(columns = {0:"x", 1:"y"})
+    loc_df.loc[:,"cell"] = adata.obs_names
+    loc_df.set_index('cell', inplace=True)
+    return loc_df
+
+
+def plot_norm_lr_boundary_in_same_plot(
+    gpair,
+    loc_df,
+    int_edges_new,
+    gene1,
+    gene2,
+    shrink_fraction=1.0,
+    file_name = None
+):
+    int_type = gpair
+    lr_pairs_ct = int_edges_new.loc[
+            int_edges_new.interaction == int_type,
+            :
+    ].copy()
+
+    tmp = loc_df
+    tmp = tmp.loc[
+        list(set(lr_pairs_ct.cell1).union(lr_pairs_ct.cell2).intersection(tmp.index)),
+        :
+    ]
+    selected_cells_1 = list(set(lr_pairs_ct.cell1).intersection(set(tmp.index)))
+    selected_cells_2 = list(set(lr_pairs_ct.cell2).intersection(set(tmp.index)))
+
+    max_gene1 = count_df.loc[selected_cells_1, gene1].values.max()
+    max_gene2 = count_df.loc[selected_cells_2, gene2].values.max()
+    global_max = max(max_gene1, max_gene2)
+    global_min = min(
+        count_df.loc[selected_cells_1, gene1].values.min(),
+        count_df.loc[selected_cells_2, gene2].values.min()
+    )
+
+    fig, ax = plt.subplots(1, 1, figsize=(7,5))
+
+    ax.scatter(loc_df['x'], loc_df['y'], c= "grey", s=0.4,alpha = 0.4)
+    colors = np.array(count_df.loc[selected_cells_1, gene1].values)
+    tmp = loc_df.loc[selected_cells_1,:].copy()
+    tmp.loc[:, 'gene'] = colors
+    sns.scatterplot(x='x', y='y', hue='gene',
+                     palette='Reds',s=10, data=tmp,edgecolor='black',alpha=1,ax= ax)
+    norm = Normalize(tmp['gene'].min(), tmp['gene'].max())
+    #norm = Normalize(global_min, global_max)
+    sm = plt.cm.ScalarMappable(cmap="Reds", norm=norm)
+    sm.set_array([])
+    ax.get_legend().remove()
+    cax = ax.figure.colorbar(sm,ax=ax,shrink=shrink_fraction)
+    cax.set_label(gene1, color='red', rotation=270, labelpad=15)
+
+    colors = np.array(count_df.loc[selected_cells_2, gene2].values)
+    tmp = loc_df.loc[selected_cells_2,:].copy()
+    tmp.loc[:, 'gene'] = colors
+    sns.scatterplot(x='x', y='y', hue='gene',
+                     palette='Blues',s=10, data=tmp,edgecolor='black',alpha=1,ax= ax)
+    norm = Normalize(tmp['gene'].min(), tmp['gene'].max())
+    #norm = Normalize(global_min, global_max)
+    sm = plt.cm.ScalarMappable(cmap="Blues", norm=norm)
+    sm.set_array([])
+    ax.get_legend().remove()
+    ax.set_title(gene1 + " | " + gene2 + "\n" + 'Tumor')
+    cax = ax.figure.colorbar(sm,ax=ax,shrink=shrink_fraction)
+    cax.set_label(gene2, color='blue', rotation=270, labelpad=15)
+
+    ax.invert_yaxis()
+    ax.set_xticks([])
+    ax.set_yticks([]);
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+    ax.spines['bottom'].set_visible(False)
+    ax.spines['left'].set_visible(False)
+    plt.tight_layout()
+    if file_name is not None:
+        plt.savefig(os.path.join(figure_parent, file_name), format='pdf', dpi=500)
+    plt.show()
