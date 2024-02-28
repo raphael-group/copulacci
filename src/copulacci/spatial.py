@@ -341,12 +341,17 @@ def prepare_data_list_for_other(
             if separate_lig_rec_type:
                 # Add the close contacts first
                 # Get edges for this group pair
-                int_edges_close_g1 = int_edges_close.loc[ int_edges_close.interaction == g1, : ]
+                if g1 == "All=All":
+                    int_edges_close_g1 = int_edges_close
+                else:
+                    int_edges_close_g1 = int_edges_close.loc[ int_edges_close.interaction == g1, : ]
                 dist_list_dict_close[g1] = int_edges_close_g1['distance'].values
                 g1_dict_close[g11] = count_df.loc[ int_edges_close_g1.cell1.values, : ].sum(1).values
                 g1_dict_close[g12] = count_df.loc[ int_edges_close_g1.cell2.values, : ].sum(1).values
-
-            int_edges_g1 = int_edges.loc[ int_edges.interaction == g1, : ]
+            if g1 == "All=All":
+                int_edges_g1 = int_edges
+            else:
+                int_edges_g1 = int_edges.loc[ int_edges.interaction == g1, : ]
             dist_list_dict[g1] = int_edges_g1['distance'].values
             g1_dict[g11] = count_df.loc[ int_edges_g1.cell1.values, : ].sum(1).values
             g1_dict[g12] = count_df.loc[ int_edges_g1.cell2.values, : ].sum(1).values

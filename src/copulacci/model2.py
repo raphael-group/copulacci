@@ -12,6 +12,8 @@ import tqdm
 import scanpy as sc
 import time
 from copulacci import spatial
+from scipy import integrate
+from scipy.signal import find_peaks
 
 
 EPSILON = 1.1920929e-07
@@ -189,10 +191,10 @@ def log_joint_lik(
         mu_2 = params[2]
     elif mode == 'single_param':
         coeff = params[0]
-        if mu_1 is None or mu_2 is None:
-            raise ValueError('mu_1 and mu_2 must be provided for mode single_param')
         mu_1 = copula_params.mu_x
         mu_2 = copula_params.mu_y
+        if mu_1 is None or mu_2 is None:
+            raise ValueError('mu_1 and mu_2 must be provided for mode single_param. Make sure `quick` is True')
     else:
         rho_zero = params[0]
         rho_one = params[1]
@@ -258,6 +260,99 @@ def log_joint_lik(
     return term1 + term2 + term3
 
 
+def only_log_lik(
+        mu_1,
+        mu_2,
+        umi_sum_1,
+        umi_sum_2,
+        x,
+        y,
+        copula_params,
+        c = np.linspace(-0.99, 0.99, 1000)
+):
+    """
+    Take double derivative of the log likelihood function
+    """
+    DT = copula_params.DT
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+
+    z = np.column_stack([r_x, r_y])
+
+    def f(coeff):
+        det = 1 - coeff**2
+        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+        term2 = (
+            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        )
+        term3 = -0.5 * len(x) * np.log(det+EPSILON)
+        logsum = term1+term2+term3
+        return -logsum
+
+    val = np.array([f(coeff) for coeff in c])
+
+    return val
+
+
+def find_local_minima(
+        mu_1,
+        mu_2,
+        umi_sum_1,
+        umi_sum_2,
+        x,
+        y,
+        copula_params
+):
+    """
+    Take double derivative of the log likelihood function
+    """
+    DT = copula_params.DT
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+
+    # get z
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+
+    z = np.column_stack([r_x, r_y])
+
+    def f(coeff):
+        det = 1 - coeff**2
+        term1 = np.sum(-0.5 * (((coeff**2)/det) * ((z[:,0]**2) + (z[:,1] ** 2)) - 2 * (coeff/det) * z[:,0] * z[:,1]) )
+        term2 = (
+            np.sum(np.log( stats.poisson.pmf(x, lam1).clip(EPSILON, 1 - EPSILON) )) +
+            np.sum(np.log(stats.poisson.pmf(y, lam2).clip(EPSILON, 1 - EPSILON) ))
+        )
+        term3 = -0.5 * len(x) * np.log(det+EPSILON)
+        logsum = term1+term2+term3
+        return -logsum
+
+    left = minimize(f, -0.9, bounds=((-0.99,0.99),))
+    right = minimize(f, 0.9, bounds=((-0.99,0.99),))
+    return([left.x[0], right.x[0]])
+
+
+def test_num_local_minima(
+    val,
+    c = np.linspace(-0.99, 0.99, 1000),
+    distance = None
+):
+    peaks, _ = find_peaks(-val,distance=distance)
+    max_peak = 0
+    if len(peaks) > 1:
+        diff = np.abs(val[peaks[0]] - val[peaks[1]])
+        max_peak = c[peaks[np.argmax(val[peaks])]]
+    else:
+        diff = 0
+        max_peak = c[peaks[0]]
+    return (diff, max_peak)
+
+
 def diff_using_num(
         mu_1,
         mu_2,
@@ -266,7 +361,9 @@ def diff_using_num(
         x,
         y,
         copula_params,
-        opt_params
+        opt_params,
+        x_train = None,
+        do_first_order = False
 ):
     """
     Take double derivative of the log likelihood function
@@ -291,14 +388,45 @@ def diff_using_num(
         term3 = -0.5 * len(x) * np.log(det+EPSILON)
         logsum = term1+ term3
         return -logsum
-
-    c = np.linspace(-0.99, 0.99, 1000)
+    if x_train is None:
+        c = np.linspace(-0.99, 0.99, 1000)
+    else:
+        c = x_train
     val = np.array([f(coeff) for coeff in c])
     y_spl = UnivariateSpline(c, val,s=0,k=4)
     # Take second derivative
     y_spl_2d = y_spl.derivative(n=2)
     d2l = y_spl_2d(c)
-    return d2l
+    if do_first_order:
+        y_spl_1d = y_spl.derivative(n=1)
+        d1l = y_spl_1d(c)
+        return val, d2l, d1l
+    return val, d2l
+
+
+def get_peak_distance(
+    x,
+    y,
+    us1,
+    us2,
+    copula_params,
+    opt_params
+):
+    sx = np.log(x.sum() / us1.sum())
+    sy = np.log(y.sum() / us2.sum())
+    _,d1lik = diff_using_num(sx,sy,us1,us2,x,y,copula_params,
+                                         opt_params,do_first_order=True)
+
+    s = np.sign(d1lik)
+    ind_range = np.where(np.r_[s[:-1]!=s[1:], [False]])[0]
+    if len(ind_range) > 1:
+        val = only_log_lik(sx,sy,us1,us2,x,y,copula_params)
+        peaks, _ = find_peaks(-np.array(val))
+        if len(peaks) > 0:
+            diff = np.abs(val[peaks[0]] - val[peaks[1]])
+            return diff
+        return 0
+    return 0
 
 
 def get_d2l_values(
@@ -326,6 +454,35 @@ def get_d2l_values(
         opt_params
     )
     return min(d2l)
+
+
+def calculate_mahalanobis_distance(
+    params,
+    x,
+    y,
+    umi_sum_1,
+    umi_sum_2,
+    copula_params
+):
+    """
+    This function calculates the Mahalanobis distance
+    between two variables
+    Parameters:
+    -----------
+    """
+    DT = copula_params.DT
+    coeff = params[0]
+    mu_1 = params[1]
+    mu_2 = params[2]
+    lam1 = umi_sum_1 * np.exp(mu_1)
+    lam2 = umi_sum_2 * np.exp(mu_2)
+
+    # Get the distributional transformation
+    r_x = get_dt_cdf(x, lam1, DT=DT)
+    r_y = get_dt_cdf(y, lam2, DT=DT)
+    z = np.column_stack([r_x, r_y])
+    det = 1 - coeff**2
+    return (1/det) * ( z[:,0]**2 + z[:,1]**2 - 2 * coeff * z[:,0] * z[:,1] )
 
 
 def call_optimizer(
@@ -377,23 +534,34 @@ def call_optimizer(
     mu_cutoff = kwargs.get('mu_cutoff', -8)
     force_opt = kwargs.get('force_opt', False)
     stability_filter = kwargs.get('stability_filter', False)
+    stability_cutoff = kwargs.get('stability_cutoff', 0.0)
+    local_minima_filter = kwargs.get('local_minima_filter', False)
+    quick = kwargs.get('quick', False)
+    run_find_peaks = kwargs.get('run_find_peaks', False)
+    add_diagonostic = kwargs.get('add_diagonostic', False)
+    if quick:
+        # local minima will be global minima
+        if not(local_minima_filter or stability_filter):
+            raise ValueError('quick mode cannot be used without local_minima_filter or stability_filter')
 
     # If either of the two variables is empty return with status empty
+    return_vec = None
     if x.sum() == 0 or y.sum() == 0:
-        if copula_mode == 'vanilla':
-            return [0, 0, 0, 'all_zero']
-        elif copula_mode == 'single_param':
-            return [0, 'all_zero']
+        if (copula_mode == 'vanilla') or (copula_mode == 'single_param'):
+            return_vec = [0, 0, 0, 'all_zero']
         else:
-            return [0, 0, 0, 0, 'all_zero']
+            return_vec = [0, 0, 0, 0, 'all_zero']
 
     if (len(x) == 0) or (len(y) == 0):
-        if copula_mode == 'vanilla':
-            return [0, 0, 0, 'empty']
-        elif copula_mode == 'single_param':
-            return [0, 'all_zero']
+        if (copula_mode == 'vanilla') or (copula_mode == 'single_param'):
+            return_vec = [0, 0, 0, 'all_zero']
         else:
-            return [0, 0, 0, 0, 'empty']
+            return_vec = [0, 0, 0, 0, 'all_zero']
+
+    if return_vec is not None:
+        if add_diagonostic:
+            return return_vec + [None]
+        return return_vec
 
     if force_opt is False:
         if use_zero_cutoff:
@@ -414,7 +582,7 @@ def call_optimizer(
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
 
     if stability_filter:
-        d2l = diff_using_num(
+        _, d2l = diff_using_num(
             mu_x_start,
             mu_y_start,
             umi_sum_1,
@@ -426,9 +594,67 @@ def call_optimizer(
         )
         # If double derivative is negative at any point then skip optimization
         # as the function is not convex
-        if min(d2l) < 0:
+        area = min(d2l)
+        if stability_cutoff < 0.0:
+            s = np.sign(d2l)
+            ind_range = np.where(np.r_[s[:-1]!=s[1:], [False]])[0]
+            if len(ind_range) > 1:
+                area = integrate.simpson(
+                    d2l[ind_range[0]+1:ind_range[1]+1],
+                    dx=0.001
+                )
+
+        if area < stability_cutoff:
             skip_opt = True
             opt_status = 'skip_stability_filter'
+
+    if local_minima_filter:
+        lik, d2l, d1l = diff_using_num(
+            mu_x_start,
+            mu_y_start,
+            umi_sum_1,
+            umi_sum_2,
+            x,
+            y,
+            copula_params,
+            opt_params,
+            do_first_order = True
+        )
+        # times it crosses zero
+        # calculate fisher information of the likelihood
+        # E[f''(x)] = -E[log(f(x))]
+        # for us it's the negative log likelihood
+        # so we drop the negative sign
+        # TODO we are not doing fisher but
+        # doing the ratio test with null coeff=0
+        llr = 0
+
+        peaks, _ = find_peaks(-lik) # find peaks
+        if len(peaks) > 1:
+            opt_status = 'skip_local_minima_filter'
+            return_vec = [0, mu_x_start, mu_y_start, opt_status]
+        elif len(peaks) == 1:
+            x_train = np.linspace(-0.99, 0.99, 1000)
+            max_peak = x_train[peaks[0]]
+            lik_null = lik[len(x_train)//2]
+            llr = -2 * (lik[peaks[0]] - lik_null)
+            return_vec = [max_peak, mu_x_start, mu_y_start, opt_status]
+        else:
+            # No minima is weird
+            # opt_status = 'skip_no_local_minima'
+            return_vec = [0, mu_x_start, mu_y_start, opt_status]
+        if add_diagonostic:
+            return_vec = return_vec + [llr]
+        #if not run_quick_optima:
+        if run_find_peaks:
+            return return_vec
+
+        # if min(d2l) < 0.0:
+        #     s = np.sign(d1l)
+        #     ind_range = np.where(np.r_[s[:-1]!=s[1:], [False]])[0]
+        #     if len(ind_range) > 1:
+        #         skip_opt = True
+        #         opt_status = 'skip_local_minima_filter'
 
 
     if use_mu_cutoff and (skip_opt is False):
@@ -437,11 +663,13 @@ def call_optimizer(
             opt_status = 'skip_mu_cutoff'
 
     if skip_opt is True:
-        if copula_mode == 'vanilla':
-            return [0, mu_x_start, mu_y_start, opt_status]
-        if copula_mode == 'single_param':
-            return [0, opt_status]
-        return [0, 0, mu_x_start, mu_y_start, opt_status]
+        if (copula_mode == 'vanilla') or (copula_mode == 'single_param'):
+            return_vec = [0, mu_x_start, mu_y_start, opt_status]
+        else:
+            return_vec = [0, 0, mu_x_start, mu_y_start, opt_status]
+        if add_diagonostic:
+            return return_vec + [llr]
+        return return_vec
 
     # Get optimization parameters
     method = opt_params.method
@@ -452,6 +680,31 @@ def call_optimizer(
     dist_list = copula_params.dist_list
     if (copula_mode == 'dist' and dist_list is None):
         raise ValueError('dist_list must be provided for mode dist')
+
+    if quick:
+        # Make is single parameter that is optimize for $\rho$
+        # switch to single_parameter mode
+        if copula_mode == 'dist':
+            raise ValueError('quick mode is not supported with distances \n as it\'s two parameters')
+        copula_params = copula_params._replace(copula_mode='single_param')
+        # set copula param's mu_x to the start estimate
+        copula_params = copula_params._replace(mu_x=mu_x_start)
+        copula_params = copula_params._replace(mu_y=mu_y_start)
+        start_params = np.array([0.0])
+        res = minimize(
+            log_joint_lik,
+            x0=start_params,
+            method=method,
+            bounds=[(-0.99, 0.99)],
+            args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
+            tol=tol
+        )
+        x_train = np.linspace(-0.99, 0.99, 1000)
+        lik = only_log_lik(mu_x_start,mu_y_start,umi_sum_1,umi_sum_2,x,y,copula_params,x_train)
+        fisher_info = 2 * (res['fun'] - lik[len(x_train)//2])
+        if add_diagonostic:
+            return list(res['x']) + [copula_params.mu_x, copula_params.mu_y, opt_status] + [fisher_info]
+        return list(res['x']) + [copula_params.mu_x, copula_params.mu_y, opt_status]
 
     if num_starts > 1:
         # Take uniform random samples from the parameter space
@@ -475,7 +728,10 @@ def call_optimizer(
             # Take the converged result with the lowest log likelihood
             results = [res for res in results if res['success'] is True]
             best_result = min(results, key=lambda x: x['fun'])
-            return list(best_result['x']) + [opt_status]
+            return_vec = list(best_result['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
         elif copula_mode == 'single_param':
             coeff_start = np.random.uniform(-0.99, 0.99, num_starts)
             start_params = np.column_stack([coeff_start])
@@ -493,7 +749,10 @@ def call_optimizer(
             # Take the converged result with the lowest log likelihood
             results = [res for res in results if res['success'] is True]
             best_result = min(results, key=lambda x: x['fun'])
-            return list(best_result['x']) + [opt_status]
+            return_vec = list(best_result['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
         else:
             rho_zero_start = np.random.uniform(-0.99, 0.99, num_starts)
             rho_one_start = np.random.uniform(0.0, 1.0, num_starts)
@@ -519,7 +778,10 @@ def call_optimizer(
             # Take the converged result with the lowest log likelihood
             results = [res for res in results if res['success'] is True]
             best_result = min(results, key=lambda x: x['fun'])
-            return list(best_result['x']) + [opt_status]
+            return_vec = list(best_result['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
     else:
         if copula_mode == 'vanilla':
             start_params = np.array([0.0, mu_x_start, mu_y_start])
@@ -531,7 +793,10 @@ def call_optimizer(
                 args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                 tol=tol
             )
-            return list(res['x']) + [opt_status]
+            return_vec = list(res['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
         elif copula_mode == 'single_param':
             start_params = np.array([0.0])
             res = minimize(
@@ -542,7 +807,10 @@ def call_optimizer(
                 args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                 tol=tol
             )
-            return list(res['x']) + [opt_status]
+            return_vec = list(res['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
         else:
             start_params = np.array([0.0, copula_params.rho_one_start, mu_x_start, mu_y_start])
             res = minimize(
@@ -558,7 +826,10 @@ def call_optimizer(
                 args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
                 tol=tol
             )
-            return list(res['x']) + [opt_status]
+            return_vec = list(res['x']) + [opt_status]
+            if add_diagonostic:
+                return return_vec + [None]
+            return return_vec
 
 
 def run_copula(
@@ -588,6 +859,7 @@ def run_copula(
         TODO - Add more documentation
     """
     cop_df_dict = {}
+    add_diagonostic = kwargs.get('add_diagonostic', False)
     if groups is None:
         groups = list(data_list_dict.keys())
     if dist_list_dict is None and copula_params.copula_mode == 'dist':
@@ -614,12 +886,14 @@ def run_copula(
             ) for x, y in data_list
         )
         if copula_params.copula_mode == 'vanilla':
-            cop_df_dict[g1] = pd.DataFrame(res, columns=[
-                    'copula_coeff',
-                    'mu_x',
-                    'mu_y',
-                    'copula_method'
-            ])
+            columns_names = [
+                'copula_coeff',
+                'mu_x',
+                'mu_y',
+                'copula_method'
+            ]
+            if add_diagonostic:
+                columns_names += ['fisher_info']
         else:
             cop_df_dict[g1] = pd.DataFrame(res, columns=[
                     'rho_zero',
@@ -628,6 +902,15 @@ def run_copula(
                     'mu_y',
                     'copula_method'
             ])
+            if add_diagonostic:
+                columns_names += ['fisher_info']
+
+        cop_df_dict[g1] = pd.DataFrame(res, columns=columns_names)
+        # Count the number of results that are empty
+        tmp = cop_df_dict[g1].loc[
+            cop_df_dict[g1].copula_method == 'copula']
+        print(f"Number of non empty results: {tmp.shape[0]}")
+
         if heteronomic:
             if df_lig_rec_index is None:
                 raise ValueError('df_lig_rec is None')
