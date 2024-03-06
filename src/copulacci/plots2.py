@@ -164,6 +164,238 @@ def draw_pairwise_scatter(
     plt.show()
 
 
+def draw_pairwise_scatter_with_pval(
+    merged_data_dict,
+    gpair,
+    score_pair,
+    ntop = 5,
+    s = 3,
+    big_s = 20,
+    pval_col = 'copula_pval_fdr',
+    bimod_filter = False,
+    label = True,
+    width = 4,
+    height = 4,
+    only_pos = False,
+    figure_parent = '.',
+    file_name = None,
+    center_plot = False,
+    take_diff = False,
+    take_sim = False,
+    fig_size = None,
+    pad = 0.1,
+    use_cutoff = False,
+    cutoff = 0.1,
+    force_text_pos = (1,2),
+    force_static_pos = (1,2),
+    force_text_neg = (1,2),
+    force_static_neg = (1,2)
+):
+    """
+    TODO : Add docstring
+    """
+    if isinstance(merged_data_dict, pd.DataFrame):
+        res = merged_data_dict.copy()
+    # if type(merged_data_dict) is pd.DataFrame:
+    #     res = merged_data_dict.copy()
+    else:
+        res = merged_data_dict[gpair].copy()
+    if bimod_filter:
+        res = res.loc[res.gmm_modality == 1].copy()
+
+    if fig_size is None:
+        _, ax=plt.subplots(1,len(score_pair),
+                            figsize=(width*len(score_pair),height)
+                )
+    else:
+        _, ax=plt.subplots(1,len(score_pair),
+                            figsize=fig_size
+                )
+    for i,(x_col, y_col) in enumerate(score_pair):
+        xmax = max(res[x_col])
+        xmin = min(res[y_col])
+        ymax = max(res[x_col])
+        ymin = min(res[y_col])
+        gmin = min(xmin, ymin)
+        gmax = max(xmax, ymax)
+        gmax = gmax + pad
+
+        if use_cutoff:
+            sns.scatterplot(
+                data = res,
+                x=x_col,
+                y=y_col,
+                s=3,
+                linewidth = 0,
+                alpha=0.4,
+                ax=ax[i]
+            )
+            res = res.loc[res[pval_col] < cutoff].copy()
+
+        if take_diff or take_sim:
+            if take_diff:
+                res['diff1'] = res[x_col] - res[y_col]
+                res['diff2'] = res[y_col] - res[x_col]
+                sig1 = res.sort_values('diff1', ascending=False)[:ntop]
+                sig2 = res.sort_values('diff2', ascending=False)[:ntop]
+            else:
+                res['Rank1'] = res[x_col].abs().rank(method='dense', ascending=False)
+                res['Rank2'] = res[y_col].abs().rank(method='dense', ascending=False)
+                intersection_dict = {}
+                len_dict = {}
+                for ind in range(res.shape[0]):
+                    lr_intersect = set(res.sort_values('Rank1').index[:ind]).intersection(
+                        set(res.sort_values('Rank2').index[:ind])
+                    )
+                    intersection_dict[ind] = lr_intersect
+                    len_dict[len(lr_intersect)] = ind
+                top_index_key = []
+                if ntop in len_dict:
+                    top_index_key = len_dict[ntop]
+                else:
+                    for k in len_dict:
+                        if k > ntop:
+                            top_index_key = len_dict[k]
+                            break
+                sig1 = res.loc[list(intersection_dict[top_index_key])].loc[res[x_col] > 0].copy()
+                sig2 = res.loc[list(intersection_dict[top_index_key])].loc[res[x_col] < 0].copy()
+        else:
+            sig1 = res.sort_values(by=x_col,
+                                key=lambda x: abs(x),
+                                ascending=False)[:ntop]
+            sig2 = res.sort_values(by=y_col,
+                                key=lambda x: abs(x),
+                                ascending=False)[:ntop]
+
+        sig12 = sig1.join(sig2, rsuffix='_2',how='inner')
+        # Main scatterplot
+        sns.scatterplot(
+            data = res,
+            x=x_col,
+            y=y_col,
+            hue=pval_col,
+            palette='Blues_r',
+            s=20,
+            linewidth = 0,
+            alpha=0.6,
+            ax=ax[i]
+        )
+        # Highlight significant points
+        sns.scatterplot(
+            data = sig1,
+            x=x_col,
+            y=y_col,
+            s=20,
+            linewidth = 1,
+            facecolors='none',
+            edgecolor = 'red',
+            alpha = 1,
+            ax=ax[i]
+        )
+
+        sns.scatterplot(
+            data = sig2,
+            x=x_col,
+            y=y_col,
+            s=20,
+            linewidth = 1,
+            facecolors='none',
+            edgecolor = 'green',
+            alpha = 1,
+            ax=ax[i]
+        )
+        ## Write the text for significant points
+        text_sig = []
+        for j,r in sig1.iterrows():
+            text_sig.append(ax[i].text(x=r[x_col], y = r[y_col],
+                                    s = j,
+                                    color=(1, 0, 0),
+                                    fontsize = 8,
+                                    fontweight='heavy'
+                                ))
+        if(len(text_sig) > 0):
+            adjust_text(
+                text_sig,
+                force_static = force_text_pos,
+                force_text = force_static_pos,
+                ensure_inside_axes = True,
+                expand_axes = True,
+                arrowprops=dict(arrowstyle="-", color='black', lw=0.5),
+                ax=ax[i]
+            )
+
+        text_sig = []
+        for j,r in sig2.iterrows():
+            text_sig.append(ax[i].text(x=r[x_col], y = r[y_col],
+                                    s = j,
+                                    color='green',
+                                    fontsize = 8,
+                                    fontweight='heavy'
+                                ))
+        if(len(text_sig) > 0):
+            adjust_text(
+                text_sig,
+                force_static = force_static_neg,
+                force_text = force_text_neg,
+                ensure_inside_axes = True,
+                expand_axes = True,
+                arrowprops=dict(arrowstyle="-", color='black', lw=0.5),
+                ax=ax[i]
+            )
+
+        if (len(sig12)):
+            sns.scatterplot(
+                data = sig12,
+                x=x_col,
+                y=y_col,
+                s=20,
+                linewidth = 2,
+                facecolors='none',
+                edgecolor = 'purple',
+                alpha = 1,
+                ax=ax[i]
+            )
+            text_sig12 = []
+            for j,r in sig12.iterrows():
+                text_sig12.append(
+                    ax[i].text(
+                        x=r[x_col],
+                        y = r[y_col],
+                        s = j,
+                        color = (0.5, 0, 0.5),
+                        fontsize = 10,
+                        weight='bold'
+                    )
+                )
+            if len(text_sig12) > 0:
+                adjust_text(
+                    text_sig12,
+                    arrowprops=dict(arrowstyle="-", color='black', lw=0.5),
+                    ax=ax[i]
+                )
+
+        norm = Normalize(res[pval_col].min(), res[pval_col].max())
+        sm = plt.cm.ScalarMappable(cmap="Blues_r", norm=norm)
+        sm.set_array([])
+        ax[i].get_legend().remove()
+        if not only_pos:
+            ax[i].axhline(0, color='grey', linestyle='--')
+            ax[i].axvline(0, color='grey', linestyle='--')
+        ax[i].set_title(f'Spearman = { stats.spearmanr(res[x_col].values, res[y_col].values)[0] :.2f}')
+        if center_plot:
+            ax[i].set_xlim(-gmax, gmax)
+            ax[i].set_ylim(-gmax, gmax)
+        cax = ax[i].figure.colorbar(sm,ax=ax[i],shrink=0.5,pad=0.1)
+        cax.set_label("FDR", rotation=270, labelpad=15)
+    plt.suptitle('Interaction '+gpair.replace('=',' → '))
+    plt.tight_layout()
+    sns.despine()
+
+    if file_name is not None:
+        plt.savefig(os.path.join(figure_parent, file_name), format='pdf', dpi=500)
+    plt.show()
+
+
 def draw_pairwise_difference_scatter(
     merged_data_dict,
     gpair,

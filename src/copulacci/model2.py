@@ -539,6 +539,7 @@ def call_optimizer(
     quick = kwargs.get('quick', False)
     run_find_peaks = kwargs.get('run_find_peaks', False)
     add_diagonostic = kwargs.get('add_diagonostic', False)
+    x_train = kwargs.get('x_train', np.linspace(-0.99, 0.99, 1000))
     if quick:
         # local minima will be global minima
         if not(local_minima_filter or stability_filter):
@@ -582,7 +583,7 @@ def call_optimizer(
     mu_y_start = np.log(y.sum() / umi_sum_2.sum())
 
     if stability_filter:
-        _, d2l = diff_using_num(
+        val, d2l = diff_using_num(
             mu_x_start,
             mu_y_start,
             umi_sum_1,
@@ -590,7 +591,8 @@ def call_optimizer(
             x,
             y,
             copula_params,
-            opt_params
+            opt_params,
+            x_train = x_train
         )
         # If double derivative is negative at any point then skip optimization
         # as the function is not convex
@@ -607,6 +609,18 @@ def call_optimizer(
         if area < stability_cutoff:
             skip_opt = True
             opt_status = 'skip_stability_filter'
+        elif run_find_peaks:
+            peaks, _ = find_peaks(-val)
+            if len(peaks) == 1:
+                max_peak = x_train[peaks[0]]
+                lik_null = val[len(x_train)//2]
+                llr = -2 * (val[peaks[0]] - lik_null)
+                if add_diagonostic:
+                    return [max_peak, mu_x_start, mu_y_start, opt_status, llr]
+                return [max_peak, mu_x_start, mu_y_start, opt_status]
+            else:
+                opt_status = 'skip_local_minima_filter'
+
 
     if local_minima_filter:
         lik, d2l, d1l = diff_using_num(
@@ -618,6 +632,7 @@ def call_optimizer(
             y,
             copula_params,
             opt_params,
+            x_train = x_train,
             do_first_order = True
         )
         # times it crosses zero
@@ -634,7 +649,6 @@ def call_optimizer(
             opt_status = 'skip_local_minima_filter'
             return_vec = [0, mu_x_start, mu_y_start, opt_status]
         elif len(peaks) == 1:
-            x_train = np.linspace(-0.99, 0.99, 1000)
             max_peak = x_train[peaks[0]]
             lik_null = lik[len(x_train)//2]
             llr = -2 * (lik[peaks[0]] - lik_null)
@@ -686,25 +700,43 @@ def call_optimizer(
         # switch to single_parameter mode
         if copula_mode == 'dist':
             raise ValueError('quick mode is not supported with distances \n as it\'s two parameters')
-        copula_params = copula_params._replace(copula_mode='single_param')
-        # set copula param's mu_x to the start estimate
-        copula_params = copula_params._replace(mu_x=mu_x_start)
-        copula_params = copula_params._replace(mu_y=mu_y_start)
-        start_params = np.array([0.0])
-        res = minimize(
-            log_joint_lik,
-            x0=start_params,
-            method=method,
-            bounds=[(-0.99, 0.99)],
-            args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
-            tol=tol
-        )
-        x_train = np.linspace(-0.99, 0.99, 1000)
-        lik = only_log_lik(mu_x_start,mu_y_start,umi_sum_1,umi_sum_2,x,y,copula_params,x_train)
-        fisher_info = 2 * (res['fun'] - lik[len(x_train)//2])
+
+        if not run_find_peaks:
+            copula_params = copula_params._replace(copula_mode='single_param')
+            # set copula param's mu_x to the start estimate
+            copula_params = copula_params._replace(mu_x=mu_x_start)
+            copula_params = copula_params._replace(mu_y=mu_y_start)
+            start_params = np.array([0.0])
+            res = minimize(
+                log_joint_lik,
+                x0=start_params,
+                method=method,
+                bounds=[(-0.99, 0.99)],
+                args=(x, y, umi_sum_1, umi_sum_2, copula_params,),
+                tol=tol
+            )
+            return_vec = list(res['x']) + [mu_x_start, mu_y_start, opt_status]
+        else:
+            # Given it's single parameter optimization we can use the
+            # find_peaks method to find the local peak
+            # this will be a problem if there are more than one peak
+            # in the likelihood function and in which case we will
+            # have to abort the optimization
+            lik = only_log_lik(mu_x_start,mu_y_start,umi_sum_1,umi_sum_2,x,y,copula_params,x_train)
+            peaks, _ = find_peaks(-lik)
+            if len(peaks) == 1:
+                max_peak = x_train[peaks[0]]
+                lik_null = lik[len(x_train)//2]
+                llr = -2 * (lik[peaks[0]] - lik_null)
+                return_vec = [max_peak, mu_x_start, mu_y_start, opt_status]
+            else:
+                opt_status = 'skip_local_minima_filter'
+                return_vec = [0, mu_x_start, mu_y_start, opt_status]
+
         if add_diagonostic:
-            return list(res['x']) + [copula_params.mu_x, copula_params.mu_y, opt_status] + [fisher_info]
-        return list(res['x']) + [copula_params.mu_x, copula_params.mu_y, opt_status]
+            return_vec = return_vec + [llr]
+        return return_vec
+
 
     if num_starts > 1:
         # Take uniform random samples from the parameter space

@@ -20,8 +20,8 @@ import os
 # import geopandas as gpd
 # gpd.options.use_pygeos = True
 
-
-def get_omnipath_int():
+# Snippet from squidpy package
+def get_omnipath_int(data):
     interactions = import_intercell_network(
                 interactions_params = MappingProxyType({}),
                 transmitter_params = MappingProxyType({"categories": "ligand"}),
@@ -40,22 +40,6 @@ def get_omnipath_int():
     interactions[SOURCE] = interactions[SOURCE].str.replace("^COMPLEX:", "", regex=True)
     interactions[TARGET] = interactions[TARGET].str.replace("^COMPLEX:", "", regex=True)
 
-    def find_min_gene_in_complex(_complex):
-        # TODO(michalk8): how can this happen?
-        if _complex is None:
-            return None
-        if "_" not in _complex:
-            return _complex
-        complexes = [c for c in _complex.split("_") if c in data.columns]
-        if not len(complexes):
-            return None
-        if len(complexes) == 1:
-            return complexes[0]
-
-        df = data[complexes].mean()
-
-        return str(df.index[df.argmin()])
-
     src = interactions.pop(SOURCE).apply(lambda s: str(s).split("_")).explode()
     src.name = SOURCE
     tgt = interactions.pop(TARGET).apply(lambda s: str(s).split("_")).explode()
@@ -68,6 +52,10 @@ def get_omnipath_int():
     interactions.drop_duplicates(subset=(SOURCE, TARGET), inplace=True, keep="first")
 
     return interactions
+
+
+# Extract lr pairs from cellphonedb
+# taken from SpatialDM package
 
 
 # Use spatialDM to get ligand receptor pairs
