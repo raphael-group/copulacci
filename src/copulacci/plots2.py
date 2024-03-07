@@ -189,19 +189,21 @@ def draw_pairwise_scatter_with_pval(
     force_text_pos = (1,2),
     force_static_pos = (1,2),
     force_text_neg = (1,2),
-    force_static_neg = (1,2)
+    force_static_neg = (1,2),
+    fontsize_small = 8,
+    fontsize_large = 10
 ):
     """
     TODO : Add docstring
     """
     if isinstance(merged_data_dict, pd.DataFrame):
-        res = merged_data_dict.copy()
+        res_backup = merged_data_dict.copy()
     # if type(merged_data_dict) is pd.DataFrame:
     #     res = merged_data_dict.copy()
     else:
-        res = merged_data_dict[gpair].copy()
+        res_backup = merged_data_dict[gpair].copy()
     if bimod_filter:
-        res = res.loc[res.gmm_modality == 1].copy()
+        res_backup = res_backup.loc[res_backup.gmm_modality == 1].copy()
 
     if fig_size is None:
         _, ax=plt.subplots(1,len(score_pair),
@@ -212,6 +214,8 @@ def draw_pairwise_scatter_with_pval(
                             figsize=fig_size
                 )
     for i,(x_col, y_col) in enumerate(score_pair):
+        res = res_backup.copy()
+
         xmax = max(res[x_col])
         xmin = min(res[y_col])
         ymax = max(res[x_col])
@@ -230,6 +234,7 @@ def draw_pairwise_scatter_with_pval(
                 alpha=0.4,
                 ax=ax[i]
             )
+            method_corr = stats.spearmanr(res[x_col].values, res[y_col].values)[0]
             res = res.loc[res[pval_col] < cutoff].copy()
 
         if take_diff or take_sim:
@@ -310,7 +315,7 @@ def draw_pairwise_scatter_with_pval(
             text_sig.append(ax[i].text(x=r[x_col], y = r[y_col],
                                     s = j,
                                     color=(1, 0, 0),
-                                    fontsize = 8,
+                                    fontsize = fontsize_small,
                                     fontweight='heavy'
                                 ))
         if(len(text_sig) > 0):
@@ -329,7 +334,7 @@ def draw_pairwise_scatter_with_pval(
             text_sig.append(ax[i].text(x=r[x_col], y = r[y_col],
                                     s = j,
                                     color='green',
-                                    fontsize = 8,
+                                    fontsize = fontsize_small,
                                     fontweight='heavy'
                                 ))
         if(len(text_sig) > 0):
@@ -363,7 +368,7 @@ def draw_pairwise_scatter_with_pval(
                         y = r[y_col],
                         s = j,
                         color = (0.5, 0, 0.5),
-                        fontsize = 10,
+                        fontsize = fontsize_large,
                         weight='bold'
                     )
                 )
@@ -381,7 +386,7 @@ def draw_pairwise_scatter_with_pval(
         if not only_pos:
             ax[i].axhline(0, color='grey', linestyle='--')
             ax[i].axvline(0, color='grey', linestyle='--')
-        ax[i].set_title(f'Spearman = { stats.spearmanr(res[x_col].values, res[y_col].values)[0] :.2f}')
+        ax[i].set_title(f'Spearman = { method_corr :.2f}')
         if center_plot:
             ax[i].set_xlim(-gmax, gmax)
             ax[i].set_ylim(-gmax, gmax)
