@@ -224,6 +224,7 @@ def draw_pairwise_scatter_with_pval(
         gmax = max(xmax, ymax)
         gmax = gmax + pad
 
+        method_corr = stats.spearmanr(res[x_col].values, res[y_col].values)[0]
         if use_cutoff:
             sns.scatterplot(
                 data = res,
@@ -234,7 +235,7 @@ def draw_pairwise_scatter_with_pval(
                 alpha=0.4,
                 ax=ax[i]
             )
-            method_corr = stats.spearmanr(res[x_col].values, res[y_col].values)[0]
+
             res = res.loc[res[pval_col] < cutoff].copy()
 
         if take_diff or take_sim:
@@ -273,6 +274,9 @@ def draw_pairwise_scatter_with_pval(
                                 ascending=False)[:ntop]
 
         sig12 = sig1.join(sig2, rsuffix='_2',how='inner')
+        if len(sig12):
+            sig1 = sig1.drop(sig12.index)
+            sig2 = sig2.drop(sig12.index)
         # Main scatterplot
         sns.scatterplot(
             data = res,
