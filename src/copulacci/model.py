@@ -1845,8 +1845,37 @@ def run_sdm(
     nproc: int = 10,
     species = 'human',
     heteronomic = False,
-    add_self_loops = True
+    add_self_loops = False,
+    normalize_adj = True
 ) -> dict:
+    """
+    Run SpatialDM on the data, try to match the setting with Copulacci
+    as best as possible.
+    Parameters:
+    -----------
+        adata_orig: sc.AnnData
+            The AnnData object with the count data
+        int_edges_new_with_selfloops: pd.DataFrame
+            The dataframe with the interaction edges
+        min_cell: int
+            The minimum number of cells to consider
+        groups: list
+            The groups to consider
+        nproc: int
+            The number of processors to use
+        species: str
+            The species to consider ('human' or 'mouse')
+        heteronomic: bool
+            If True then the ligand-receptor pairs are heteronomic
+        add_self_loops: bool
+            If True then add self loops to the graph
+        normalize_adj: bool
+            If True then normalize the adjacency matrix
+    Returns:
+    --------
+        sdm_dfs: dict
+            The dictionary with the results
+    """
 
     sdm_dfs = {}
     adata = adata_orig.copy()
@@ -1871,9 +1900,11 @@ def run_sdm(
         if g11 == g12:
             G = nx.Graph()
             G.add_weighted_edges_from(lr_pairs_g1)
-            # if add_self_loops:
-            #     self_loops = [(node, node, 1) for node in G.nodes]
-            #     G.add_weighted_edges_from(self_loops)
+            # Not sure if we should add self loops
+            # sperately as we do for SCC and Copulacci
+            if add_self_loops:
+                self_loops = [(node, node, 1) for node in G.nodes]
+                G.add_weighted_edges_from(self_loops)
         else:
             G = nx.DiGraph()
             G.add_weighted_edges_from(lr_pairs_g1)
@@ -1908,7 +1939,8 @@ def run_sdm(
         adj = nx.adjacency_matrix(G)
         # TODO Not sure if we should normalize
         # to match the the graph from copulacci
-        adj = normalize(adj, norm='l1', axis=1)
+        if normalize_adj:
+            adj = normalize(adj, norm='l1', axis=1)
         adata_gpair.obsp['weight'] = adj.todense()
         adata_gpair.obsp['nearest_neighbors'] = adj.todense()
         sc.pp.normalize_total(adata_gpair, target_sum=None)
