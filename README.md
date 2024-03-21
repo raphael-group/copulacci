@@ -140,3 +140,7 @@ plt.show()
 ```
 
 ![image](./img/simulation_boxplot.png)
+
+
+Recommendend Parameter setting for Running Copula
+-----------------------------------------------------------
