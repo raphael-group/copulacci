@@ -1,7 +1,11 @@
-Motivation
+Overview
 ----------
+Copulacci is a tool for learning cell-cell interactions (CCIs) from sparse spatial transcriptomics data. Given input spatial transcriptomics data, i.e. a UMI count matrix and spatial locationsm Copulacci fits a copula distribution to the data; specifically, for each ligand-receptor pair, Copulacci fits a Gaussian copula with Poisson marginals to ligand-receptor measurements across every pair of adjacent spots. The Poisson marginals account for the integer UMI counts (no log-normalization necessary) and sparsity of the data, while the Gaussian copula allows us to compute a _correlation coefficient_ which quantifies the interaction between the ligand and receptor. 
 
-Recovering true correlation coefficient in the context of single-cell or spatial RNA-seq data can be a challenging task due to the sparse nature of genomic measurements. Spearman and Pearson measures are long standing go-to methods for estimating correlation coefficients for any two vectors of numbers. However for single-cell transcriptomics and more recently for spatial transcriptomics we have more information of the underlying dataset, for example, we know that the underlying data is always integers, moreover each cell/spot expresses a fixed number of total UMI counts that is distributed over the genes that are expressed. These two observation can be incorporated in a better estimation of the correlation coefficient.
+Input/Output/model parameters
+----------
+The input is an `adata` with integer UMI counts and spatial locations. The output is a list of ligand-receptor pairs with (1) an estimated copula correlation coefficient, and (2) estimated (log-normalized )mean ligand and receptor expression. For spatial data where the cells are irregularly organized, then Copulacci requires the radius of the spatial adjacency graph; otherwise, Copulacci requires no extra parameters.
+
 
 Simulation
 -----------
