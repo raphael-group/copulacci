@@ -12,6 +12,8 @@ Installation
 ```python=3.9
 conda create -n copulacci python=3.9
 conda activate copulacci
+pip install selenium spatialdm
+pip install squidpy
 git clone git@github.com:raphael-group/copulacci.git
 cd copulacci
 pip install .
