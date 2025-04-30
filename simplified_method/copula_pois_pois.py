@@ -4,7 +4,6 @@ from scipy import stats, linalg
 from scipy.interpolate import UnivariateSpline
 from scipy.optimize import minimize
 from joblib import Parallel, delayed
-import scanpy as sc
 import time
 from scipy import integrate
 from scipy.signal import find_peaks
