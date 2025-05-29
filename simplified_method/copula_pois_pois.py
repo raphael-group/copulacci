@@ -158,7 +158,7 @@ def quick_find_vectorized(
     if DT:
         for _ in range(perm-1):
             r_x += get_dt_cdf(x, lam1, DT=DT)
-            r_x += get_dt_cdf(y, lam2, DT=DT)
+            r_y += get_dt_cdf(y, lam2, DT=DT)
         z = np.column_stack([r_x/perm, r_y/perm])
     else:
         z = np.column_stack([r_x, r_y])
